@@ -161,7 +161,7 @@ function renderRoom(r, flash) {
   if (!el) {
     el = document.createElement("div");
     el.className = "room"; el.id = "room-" + r.id;
-    el.innerHTML = '<h2><span class="name"></span><span class="badge"></span></h2>' +
+    el.innerHTML = '<h2><span class="name"></span><span class="badges"><span class="badge bypass">Bypass</span> <span class="badge state"></span></span></h2>' +
       '<div class="temp"></div>' +
       '<div class="sp"><span class="label">Setpoint</span><button class="dec" aria-label="Lower">−</button>' +
       '<span class="spv"></span><button class="inc" aria-label="Raise">+</button></div>' +
@@ -173,9 +173,10 @@ function renderRoom(r, flash) {
   const d = drafts.get(r.id);
   const shown = d ? d.value : r.setpoint;
   el.querySelector(".name").textContent = r.name;
-  const b = el.querySelector(".badge");
+  el.querySelector(".bypass").style.display = r.bypass ? "" : "none";
+  const b = el.querySelector(".state");
   b.textContent = r.heating == null ? "–" : (r.heating ? "Heating" : "Idle");
-  b.className = "badge" + (r.heating ? " on" : "");
+  b.className = "badge state" + (r.heating ? " on" : "");
   el.querySelector(".temp").textContent = fmt(r.temperature);
   const spv = el.querySelector(".spv");
   spv.textContent = fmt(shown);

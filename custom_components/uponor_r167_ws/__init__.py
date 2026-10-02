@@ -10,7 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT, Platform
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
@@ -47,6 +47,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         sw_version=client.status.get("version"),
         configuration_url=f"http://{host}:{port}/",
     )
+
+    # 0.2.0 had a "heating demand" binary sensor per room; the same
+    # information is the climate entity's action, so it was removed.
+    ent_reg = er.async_get(hass)
+    for ent in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
+        if ent.domain == "binary_sensor" and ent.unique_id.endswith("_heating"):
+            ent_reg.async_remove(ent.entity_id)
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         "client": client,

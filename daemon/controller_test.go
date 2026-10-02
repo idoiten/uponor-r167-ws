@@ -259,3 +259,23 @@ func TestExternalSetpointLogged(t *testing.T) {
 		t.Fatalf("external change not logged: %v", logs)
 	}
 }
+
+func TestBypassFlag(t *testing.T) {
+	data, _ := os.ReadFile("testdata_probe.bin")
+	fr := &fakeRadio{records: loadRecords(t)}
+	c := NewController(fr, t.Logf, func(string, any) {}, 0)
+	var framer Framer
+	for _, p := range framer.Push(data, true) {
+		c.Handle(p)
+		for _, rec := range fr.take() {
+			c.Handle(rec)
+		}
+	}
+	// Bypass is enabled for WC and Badrum only (matches the I-167 and RTL-SDR).
+	for addr, r := range c.rooms {
+		want := addr == 0x89 || addr == 0xB3
+		if r.Bypass == nil || *r.Bypass != want {
+			t.Errorf("%s (0x%02X) bypass = %v, want %v", r.Name, addr, r.Bypass, want)
+		}
+	}
+}

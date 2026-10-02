@@ -33,8 +33,8 @@
       "radio": {
         "name": "Radio"
       },
-      "heating": {
-        "name": "Värmebehov"
+      "bypass": {
+        "name": "Bypass"
       }
     }
   }

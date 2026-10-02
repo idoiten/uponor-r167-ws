@@ -1,4 +1,4 @@
-"""Binary sensors: radio connectivity and per-room heating demand."""
+"""Binary sensors: radio connectivity and per-room bypass."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         hass,
         entry,
         async_add_entities,
-        lambda room_id: [UponorWsHeatingSensor(entry, client, room_id, data["gateway_device_id"])],
+        lambda room_id: [UponorWsBypassSensor(entry, client, room_id, data["gateway_device_id"])],
     )
 
 
@@ -58,16 +58,15 @@ class UponorWsRadioSensor(UponorWsEntity, BinarySensorEntity):
         }
 
 
-class UponorWsHeatingSensor(UponorWsRoomEntity, BinarySensorEntity):
-    """On when the room asks for heat ("room in demand")."""
+class UponorWsBypassSensor(UponorWsRoomEntity, BinarySensorEntity):
+    """On when bypass is enabled for the room (set on the I-167)."""
 
-    _attr_device_class = BinarySensorDeviceClass.HEAT
-    _attr_translation_key = "heating"
+    _attr_translation_key = "bypass"
 
     def __init__(self, entry, client, room_id, gateway_device_id) -> None:
         super().__init__(entry, client, room_id, gateway_device_id)
-        self._attr_unique_id = f"{DOMAIN}_{room_id}_heating"
+        self._attr_unique_id = f"{DOMAIN}_{room_id}_bypass"
 
     @property
     def is_on(self) -> bool | None:
-        return (self.room or {}).get("heating")
+        return (self.room or {}).get("bypass")

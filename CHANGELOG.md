@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.0] - 2026-10-02
+
+### Added
+- **Bypass per room.** Decoded from bit 0x01 of the room header (byte 16)
+  and of the room record (byte 12); it matches the rooms with bypass
+  enabled on the I-167. Shown as a binary sensor per room in Home
+  Assistant, as `bypass` in the WebSocket data and as a badge on the web
+  page.
+
+### Removed
+- The per-room "Heating demand" binary sensor added in 0.2.0. The same
+  information is the climate entity's action (heating/idle). Existing
+  heating demand entities are removed from the entity registry
+  automatically when the integration loads.
+
 ## [0.2.1] - 2026-10-02
 
 ### Added

@@ -13,8 +13,8 @@ Changes are pushed to Home Assistant over a WebSocket – no polling.
 X-165 ⇄ I-167 ⇄ (868 MHz) ⇄ R-167 running uhomed ── WebSocket :8765 ── Home Assistant
 ```
 
-> **Status: 0.2.0.** Temperatures, setpoints, limits and heating demand are
-> read, and setpoints can be changed. Alarms are not supported yet. While uhomed runs, the
+> **Status: 0.3.0.** Temperatures, setpoints, limits, heating demand and
+> bypass are read, and setpoints can be changed. Alarms are not supported yet. While uhomed runs, the
 > original Uponor web UI and app are not available – switch back to the
 > original mode at any time.
 
@@ -68,7 +68,7 @@ Connect to `ws://<r167>:8765/ws`. The server sends JSON messages
 | `status` | `{version, radio_ok, last_frame, frames, records, rejected_data_frames}` |
 
 A room: `{"id": "4a", "channel": 18, "name": "K-E-V", "temperature": 22.2,
-"setpoint": 25.0, "min": 15.0, "max": 25.0, "bitmask": "0406", "heating": true, "last_update": "..."}`.
+"setpoint": 25.0, "min": 15.0, "max": 25.0, "bitmask": "0406", "heating": true, "bypass": false, "last_update": "..."}`.
 `id` is the room's controller address and is stable.
 
 Client commands:

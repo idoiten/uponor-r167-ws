@@ -23,6 +23,9 @@ import (
 //
 //   1F  85  len 11  I-167 -> R-167: "send your change for address [8]" (see writes.go)
 //
+// Bypass is bit 0x01 of byte [16] in the room header and of byte [12]
+// in the record (matches the rooms with bypass enabled on the I-167).
+//
 // The room-in-demand ("heating") flag is bit 0x40 of byte [8] in the
 // data frame and of byte [28] in the record.
 //
@@ -67,6 +70,7 @@ type Room struct {
 	Max         *float64 `json:"max"`
 	Bitmask     string   `json:"bitmask"`
 	Heating     *bool    `json:"heating"`
+	Bypass      *bool    `json:"bypass"`
 	LastUpdate  string   `json:"last_update"`
 
 	addr    byte
@@ -176,11 +180,13 @@ func (c *Controller) Handle(p []byte) {
 		c.onWriteQuery(p, now)
 	case p[4] == 0x01 && p[5] == 0x17 && len(p) == 31 && p[6] == 0x00:
 		c.hdrAddr, c.hdrAt = p[11], now
+		bypassChanged := false
 		if r := c.rooms[p[11]]; r != nil {
 			r.block = append([]byte{}, p[15:27]...)
+			bypassChanged = setFlag(&r.Bypass, p[16]&0x01 != 0)
 		}
 		c.confirmWrite(p[11], u16(p, 27))
-		c.updateRoom(p[11], nil, ptr(tempC(p, 27)), ptr(tempC(p, 19)), ptr(tempC(p, 21)), now)
+		c.updateRoom(p[11], nil, ptr(tempC(p, 27)), ptr(tempC(p, 19)), ptr(tempC(p, 21)), bypassChanged, now)
 	case p[4] == 0x01 && p[5] == 0x17 && len(p) == 29 && p[6] == 0x16:
 		c.onData(p, now)
 	case p[4] == 0x01 && p[5] == 0x17 && len(p) == 37 && p[6] == 0x1E:
@@ -312,6 +318,9 @@ func (c *Controller) onRecord(p []byte, now time.Time) {
 	r.block = append([]byte{}, p[11:23]...)
 	c.confirmWrite(addr, u16(p, 23))
 	changed := setHeating(r, p[28]&0x40 != 0)
+	if setFlag(&r.Bypass, p[12]&0x01 != 0) {
+		changed = true
+	}
 	if r.bitmask != bm {
 		r.bitmask, r.Bitmask, changed = bm, fmt.Sprintf("%04x", bm), true
 	}
@@ -347,12 +356,12 @@ func (c *Controller) onData(p []byte, now time.Time) {
 	}
 }
 
-func (c *Controller) updateRoom(addr byte, temp, sp, min, max *float64, now time.Time) {
+func (c *Controller) updateRoom(addr byte, temp, sp, min, max *float64, force bool, now time.Time) {
 	r := c.rooms[addr]
 	if r == nil {
 		return // wait for its record (gives channel, name and bitmask)
 	}
-	changed := c.applyValues(r, temp, sp, min, max, now)
+	changed := c.applyValues(r, temp, sp, min, max, now) || force
 	if r.Name != "" {
 		c.publishRoom(r, changed, now)
 	}
@@ -442,11 +451,14 @@ func (c *Controller) Snapshot() Snapshot {
 func expectedAddr(ch byte) byte { return byte(int(ch)*21 - 304) }
 
 // setHeating updates the "room in demand" flag; returns true if changed.
-func setHeating(r *Room, on bool) bool {
-	if r.Heating != nil && *r.Heating == on {
+func setHeating(r *Room, on bool) bool { return setFlag(&r.Heating, on) }
+
+// setFlag updates an optional boolean; returns true if it changed.
+func setFlag(dst **bool, on bool) bool {
+	if *dst != nil && **dst == on {
 		return false
 	}
-	r.Heating = &on
+	*dst = &on
 	return true
 }
 
