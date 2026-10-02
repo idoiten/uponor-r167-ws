@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.0] - 2026-10-02
+
+### Added
+- **Raw controller registers per room**, to map the remaining bits (the
+  alarms in particular) by provoking them. Rooms now carry
+  `registers: {"3d": ..., "3e": ..., "3f": ...}` – 3D status (heating
+  demand, limits, ECO), 3E alarms (technical, tamper, RF, battery, RH
+  sensor), 3F thermostat type / regulation mode – decoded from the data
+  frames and records. Every change is logged, e.g.
+  `alarm register (3e) for WC changed 0000 -> 0020`, and a non-zero alarm
+  register is logged at start-up. Shown on the web page and as
+  `register_3d` / `register_3e` / `register_3f` attributes on each
+  climate entity.
+
 ## [0.3.1] - 2026-10-02
 
 ### Changed

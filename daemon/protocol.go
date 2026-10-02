@@ -71,7 +71,12 @@ type Room struct {
 	Bitmask     string   `json:"bitmask"`
 	Heating     *bool    `json:"heating"`
 	Bypass      *bool    `json:"bypass"`
-	LastUpdate  string   `json:"last_update"`
+	// Raw controller registers, hex: 3D status (heating demand, limits,
+	// ECO), 3E alarms (technical, tamper, RF, battery, RH sensor),
+	// 3F thermostat type / regulation mode. Bit meanings beyond the
+	// heating demand (3D 0x0040) are not mapped yet.
+	Registers  map[string]string `json:"registers"`
+	LastUpdate string            `json:"last_update"`
 
 	addr    byte
 	bitmask uint16
@@ -318,6 +323,9 @@ func (c *Controller) onRecord(p []byte, now time.Time) {
 	r.block = append([]byte{}, p[11:23]...)
 	c.confirmWrite(addr, u16(p, 23))
 	changed := setHeating(r, p[28]&0x40 != 0)
+	if c.setRegisters(r, u16(p, 27), u16(p, 29), u16(p, 31)) {
+		changed = true
+	}
 	if setFlag(&r.Bypass, p[12]&0x01 != 0) {
 		changed = true
 	}
@@ -350,7 +358,8 @@ func (c *Controller) onData(p []byte, now time.Time) {
 	}
 	c.hdrAt = time.Time{}
 	heatingChanged := setHeating(r, p[8]&0x40 != 0)
-	changed := c.applyValues(r, ptr(tempC(p, 13)), nil, nil, nil, now) || heatingChanged
+	regsChanged := c.setRegisters(r, u16(p, 7), u16(p, 9), u16(p, 11))
+	changed := c.applyValues(r, ptr(tempC(p, 13)), nil, nil, nil, now) || heatingChanged || regsChanged
 	if r.Name != "" {
 		c.publishRoom(r, changed, now)
 	}
@@ -441,6 +450,10 @@ func (c *Controller) Snapshot() Snapshot {
 	for _, r := range c.rooms {
 		if r.Name != "" {
 			cp := *r
+			cp.Registers = map[string]string{}
+			for k, v := range r.Registers {
+				cp.Registers[k] = v
+			}
 			s.Rooms = append(s.Rooms, &cp)
 		}
 	}
@@ -470,4 +483,35 @@ func (c *Controller) publishRoom(r *Room, changed bool, now time.Time) {
 	}
 	r.published = now
 	c.pub("room", r)
+}
+
+var registerNames = []string{"3d", "3e", "3f"}
+var registerLabels = map[string]string{"3d": "status", "3e": "alarm", "3f": "type"}
+
+// setRegisters stores the raw 3D/3E/3F registers and logs every change,
+// so unknown bits (alarms in particular) can be mapped by provoking them.
+func (c *Controller) setRegisters(r *Room, vals ...uint16) bool {
+	if r.Registers == nil {
+		r.Registers = map[string]string{}
+	}
+	room := r.Name
+	if room == "" {
+		room = "room " + r.ID
+	}
+	changed := false
+	for i, name := range registerNames {
+		v := fmt.Sprintf("%04x", vals[i])
+		old, known := r.Registers[name]
+		if known && old == v {
+			continue
+		}
+		r.Registers[name] = v
+		changed = true
+		if known {
+			c.log("%s register (%s) for %s changed %s -> %s", registerLabels[name], name, room, old, v)
+		} else if name == "3e" && vals[i] != 0 {
+			c.log("alarm register (3e) for %s is %s at start", room, v)
+		}
+	}
+	return changed
 }

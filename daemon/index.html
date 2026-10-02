@@ -83,7 +83,9 @@ function ago(ts) {
 }
 
 function metaText(r) {
-  return `Limits ${fmt(r.min)} – ${fmt(r.max)} · updated ${ago(r.last_update)}`;
+  const g = r.registers || {};
+  const regs = g["3d"] ? ` · 3D ${g["3d"]} 3E ${g["3e"]} 3F ${g["3f"]}` : "";
+  return `Limits ${fmt(r.min)} – ${fmt(r.max)}${regs} · updated ${ago(r.last_update)}`;
 }
 
 function renderStatus() {

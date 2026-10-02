@@ -279,3 +279,32 @@ func TestBypassFlag(t *testing.T) {
 		}
 	}
 }
+
+func TestAlarmRegisterLogged(t *testing.T) {
+	fr := &fakeRadio{records: loadRecords(t)}
+	var logs []string
+	logf := func(f string, a ...any) { logs = append(logs, fmt.Sprintf(f, a...)) }
+	c := NewController(fr, logf, func(string, any) {}, time.Hour)
+	c.names[0x12], c.names[0x14] = "K-E-V", "Sovrum 2"
+	c.Handle(fr.records[0x4A])
+	c.Handle(fr.records[0x74])
+	if got := c.rooms[0x74].Registers["3e"]; got != "8000" {
+		t.Fatalf("Sovrum 2 alarm register = %q, want 8000", got)
+	}
+	// K-E-V header + data frame with a (made-up) alarm bit 0x0020 in 3E.
+	c.Handle(mustHex("14 FF 3C 1A 01 17 00 52 00 0B 00 4A 00 08 10 88 00 00 64 02 4E 03 02 02 A8 03 14 03 02 00 00"))
+	c.Handle(mustHex("14 FF 3C 1A 01 17 16 00 41 00 20 04 00 02 D0 7F FF 90 00 00 00 00 00 00 00 00 00 04 06"))
+	want := "alarm register (3e) for K-E-V changed 0000 -> 0020"
+	found := false
+	for _, l := range logs {
+		if l == want {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("missing %q in %v", want, logs)
+	}
+	if c.Snapshot().Rooms[0].Registers == nil {
+		t.Fatal("registers missing from snapshot")
+	}
+}

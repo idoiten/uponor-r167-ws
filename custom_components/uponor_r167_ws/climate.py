@@ -60,6 +60,11 @@ class UponorWsClimate(UponorWsRoomEntity, ClimateEntity):
         return (self.room or {}).get("max") or 35.0
 
     @property
+    def extra_state_attributes(self):
+        regs = (self.room or {}).get("registers") or {}
+        return {f"register_{k}": v for k, v in regs.items()}
+
+    @property
     def hvac_action(self) -> HVACAction | None:
         heating = (self.room or {}).get("heating")
         if heating is None:
