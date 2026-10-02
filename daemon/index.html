@@ -7,11 +7,11 @@
 <style>
   :root {
     --bg: #f6f7f9; --card: #ffffff; --text: #1d2330; --muted: #6b7380;
-    --line: #e3e6eb; --accent: #d9480f; --ok: #2b8a3e; --bad: #c92a2a;
+    --line: #e3e6eb; --accent: #d9480f; --ok: #2b8a3e; --bad: #c92a2a; --btn: #eef0f3;
   }
   @media (prefers-color-scheme: dark) {
     :root { --bg: #14171c; --card: #1d2128; --text: #e6e8eb; --muted: #9098a3;
-            --line: #2c313a; --accent: #ff8a4c; --ok: #51cf66; --bad: #ff6b6b; }
+            --line: #2c313a; --accent: #ff8a4c; --ok: #51cf66; --bad: #ff6b6b; --btn: #272c35; }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text);
@@ -26,15 +26,24 @@
   .tile { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; min-width: 160px; }
   .tile .label { font-size: 12px; color: var(--muted); }
   .tile .value { font-size: 24px; font-variant-numeric: tabular-nums; }
-  .rooms { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+  .rooms { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
   .room { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
-  .room h2 { font-size: 15px; margin: 0 0 8px; }
+  .room h2 { font-size: 15px; margin: 0 0 8px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
   .room .temp { font-size: 30px; font-variant-numeric: tabular-nums; }
-  .room .sp { color: var(--accent); font-variant-numeric: tabular-nums; }
-  .room .badge { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 99px;
-                 border: 1px solid var(--line); color: var(--muted); margin-left: 8px; vertical-align: 2px; }
-  .room .badge.on { border-color: var(--accent); color: var(--accent); }
-  .room .meta { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .badge { font-size: 12px; font-weight: normal; padding: 1px 8px; border-radius: 99px;
+           border: 1px solid var(--line); color: var(--muted); }
+  .badge.on { border-color: var(--accent); color: var(--accent); }
+  .sp { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+  .sp .label { color: var(--muted); font-size: 13px; margin-right: auto; }
+  .sp button { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--line);
+               background: var(--btn); color: var(--text); font-size: 18px; line-height: 1; cursor: pointer; }
+  .sp button:disabled { opacity: .4; cursor: default; }
+  .sp .spv { color: var(--accent); font-variant-numeric: tabular-nums; min-width: 64px; text-align: center; font-weight: 600; }
+  .sp .spv.draft { text-decoration: underline dotted; }
+  .msg { font-size: 12px; min-height: 16px; margin-top: 4px; color: var(--muted); }
+  .msg.err { color: var(--bad); }
+  .msg.ok { color: var(--ok); }
+  .room .meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
   .flash { animation: flash 1.2s ease-out; }
   @keyframes flash { from { box-shadow: 0 0 0 2px var(--accent); } to { box-shadow: 0 0 0 0 transparent; } }
   footer { margin-top: 28px; font-size: 12px; color: var(--muted); }
@@ -54,9 +63,28 @@
   <footer id="footer"></footer>
 </main>
 <script>
-const rooms = new Map();
-let status = null, connected = false;
+const rooms = new Map();     // id -> room from uhomed
+const drafts = new Map();    // id -> {value, timer, sending}
+let status = null, connected = false, ws = null, nextId = 1;
+const pending = new Map();   // command id -> room id
+const SEND_DELAY = 1500;     // ms after the last click before sending
+
 const fmt = v => (v === null || v === undefined) ? "–" : v.toFixed(1) + " °C";
+
+function ago(ts) {
+  if (!ts) return "–";
+  const s = Math.max(0, Math.round((Date.now() - new Date(ts).getTime()) / 1000));
+  const unit = (n, w) => `${n} ${w}${n === 1 ? "" : "s"} ago`;
+  if (s < 5) return "just now";
+  if (s < 60) return unit(s, "second");
+  if (s < 3600) return unit(Math.floor(s / 60), "minute");
+  if (s < 86400) return unit(Math.floor(s / 3600), "hour");
+  return unit(Math.floor(s / 86400), "day");
+}
+
+function metaText(r) {
+  return `Limits ${fmt(r.min)} – ${fmt(r.max)} · updated ${ago(r.last_update)}`;
+}
 
 function renderStatus() {
   const ok = connected && status && status.radio_ok;
@@ -67,22 +95,95 @@ function renderStatus() {
     `uhomed ${status.version} · frames ${status.frames} · records ${status.records} · rejected data frames ${status.rejected_data_frames}`;
 }
 
+function setMsg(id, text, cls) {
+  const el = document.getElementById("room-" + id);
+  if (!el) return;
+  const m = el.querySelector(".msg");
+  m.textContent = text || "";
+  m.className = "msg" + (cls ? " " + cls : "");
+}
+
+function step(id, delta) {
+  const r = rooms.get(id);
+  if (!r || r.setpoint == null) return;
+  const d = drafts.get(id) || { value: r.setpoint };
+  if (d.sending) return;
+  let v = Math.round((d.value + delta) * 2) / 2;
+  if (r.min != null) v = Math.max(r.min, v);
+  if (r.max != null) v = Math.min(r.max, v);
+  d.value = v;
+  clearTimeout(d.timer);
+  if (v === r.setpoint) {
+    drafts.delete(id);
+    setMsg(id, "");
+  } else {
+    d.timer = setTimeout(() => send(id), SEND_DELAY);
+    drafts.set(id, d);
+    setMsg(id, "Sending in a moment…");
+  }
+  renderRoom(r, false);
+}
+
+function send(id) {
+  const d = drafts.get(id);
+  if (!d) return;
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    drafts.delete(id);
+    setMsg(id, "Not connected", "err");
+    renderRoom(rooms.get(id), false);
+    return;
+  }
+  d.sending = true;
+  const cmd = nextId++;
+  pending.set(cmd, id);
+  ws.send(JSON.stringify({ type: "set_setpoint", id: cmd, room: id, value: d.value }));
+  setMsg(id, "Sending… waiting for the controller to confirm");
+  renderRoom(rooms.get(id), false);
+}
+
+function onResult(res) {
+  const id = pending.get(res.id);
+  if (!id) return;
+  pending.delete(res.id);
+  drafts.delete(id);
+  if (res.success) {
+    setMsg(id, "Saved", "ok");
+    setTimeout(() => { if (!drafts.has(id)) setMsg(id, ""); }, 4000);
+  } else {
+    setMsg(id, res.error || "Failed", "err");
+  }
+  const r = rooms.get(id);
+  if (r) renderRoom(r, false);
+}
+
 function renderRoom(r, flash) {
   let el = document.getElementById("room-" + r.id);
   if (!el) {
     el = document.createElement("div");
     el.className = "room"; el.id = "room-" + r.id;
-    el.innerHTML = '<h2></h2><div class="temp"></div><div class="sp"><span class="spv"></span><span class="badge"></span></div><div class="meta"></div>';
+    el.innerHTML = '<h2><span class="name"></span><span class="badge"></span></h2>' +
+      '<div class="temp"></div>' +
+      '<div class="sp"><span class="label">Setpoint</span><button class="dec" aria-label="Lower">−</button>' +
+      '<span class="spv"></span><button class="inc" aria-label="Raise">+</button></div>' +
+      '<div class="msg"></div><div class="meta"></div>';
+    el.querySelector(".dec").onclick = () => step(r.id, -0.5);
+    el.querySelector(".inc").onclick = () => step(r.id, +0.5);
     document.getElementById("rooms").appendChild(el);
   }
-  el.querySelector("h2").textContent = r.name;
-  el.querySelector(".temp").textContent = fmt(r.temperature);
-  el.querySelector(".spv").textContent = "Setpoint " + fmt(r.setpoint);
+  const d = drafts.get(r.id);
+  const shown = d ? d.value : r.setpoint;
+  el.querySelector(".name").textContent = r.name;
   const b = el.querySelector(".badge");
-  b.textContent = r.heating === null || r.heating === undefined ? "–" : (r.heating ? "Heating" : "Idle");
+  b.textContent = r.heating == null ? "–" : (r.heating ? "Heating" : "Idle");
   b.className = "badge" + (r.heating ? " on" : "");
-  el.querySelector(".meta").textContent =
-    `Limits ${fmt(r.min)} – ${fmt(r.max)} · id ${r.id} · updated ${r.last_update ? new Date(r.last_update).toLocaleTimeString() : "–"}`;
+  el.querySelector(".temp").textContent = fmt(r.temperature);
+  const spv = el.querySelector(".spv");
+  spv.textContent = fmt(shown);
+  spv.className = "spv" + (d ? " draft" : "");
+  const busy = !!(d && d.sending) || r.setpoint == null;
+  el.querySelector(".dec").disabled = busy || (r.min != null && shown <= r.min);
+  el.querySelector(".inc").disabled = busy || (r.max != null && shown >= r.max);
+  el.querySelector(".meta").textContent = metaText(r);
   if (flash) { el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
 }
 
@@ -98,9 +199,18 @@ function renderSystem(s) {
 }
 
 function connect() {
-  const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+  ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
   ws.onopen = () => { connected = true; renderStatus(); };
-  ws.onclose = () => { connected = false; renderStatus(); setTimeout(connect, 3000); };
+  ws.onclose = () => {
+    connected = false; renderStatus();
+    for (const id of pending.values()) {
+      drafts.delete(id);
+      setMsg(id, "Connection lost – change not confirmed", "err");
+      const r = rooms.get(id); if (r) renderRoom(r, false);
+    }
+    pending.clear();
+    setTimeout(connect, 3000);
+  };
   ws.onmessage = ev => {
     const m = JSON.parse(ev.data);
     if (m.type === "snapshot") {
@@ -116,10 +226,19 @@ function connect() {
       renderSystem(m.data);
     } else if (m.type === "status") {
       status = m.data;
+    } else if (m.type === "result") {
+      onResult(m.data);
     }
     renderStatus();
   };
 }
+
+// keep the "updated … ago" texts current
+setInterval(() => rooms.forEach(r => {
+  const el = document.getElementById("room-" + r.id);
+  if (el) el.querySelector(".meta").textContent = metaText(r);
+}), 1000);
+
 connect();
 </script>
 </body>

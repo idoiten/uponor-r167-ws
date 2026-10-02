@@ -72,6 +72,9 @@ type Room struct {
 	addr    byte
 	bitmask uint16
 	block   []byte // 12 settings bytes echoed back when writing a setpoint
+	// setpoint we just wrote ourselves, so its echo is not logged as external
+	ownSetpoint *float64
+	published   time.Time
 }
 
 type System struct {
@@ -318,8 +321,8 @@ func (c *Controller) onRecord(p []byte, now time.Time) {
 	if c.applyValues(r, ptr(tempC(p, 33)), ptr(tempC(p, 23)), ptr(tempC(p, 15)), ptr(tempC(p, 17)), now) {
 		changed = true
 	}
-	if changed && r.Name != "" {
-		c.pub("room", r)
+	if r.Name != "" {
+		c.publishRoom(r, changed, now)
 	}
 }
 
@@ -338,11 +341,9 @@ func (c *Controller) onData(p []byte, now time.Time) {
 	}
 	c.hdrAt = time.Time{}
 	heatingChanged := setHeating(r, p[8]&0x40 != 0)
-	if !c.applyValues(r, ptr(tempC(p, 13)), nil, nil, nil, now) && !heatingChanged {
-		return
-	}
+	changed := c.applyValues(r, ptr(tempC(p, 13)), nil, nil, nil, now) || heatingChanged
 	if r.Name != "" {
-		c.pub("room", r)
+		c.publishRoom(r, changed, now)
 	}
 }
 
@@ -351,8 +352,9 @@ func (c *Controller) updateRoom(addr byte, temp, sp, min, max *float64, now time
 	if r == nil {
 		return // wait for its record (gives channel, name and bitmask)
 	}
-	if c.applyValues(r, temp, sp, min, max, now) && r.Name != "" {
-		c.pub("room", r)
+	changed := c.applyValues(r, temp, sp, min, max, now)
+	if r.Name != "" {
+		c.publishRoom(r, changed, now)
 	}
 }
 
@@ -368,6 +370,13 @@ func (c *Controller) applyValues(r *Room, temp, sp, min, max *float64, now time.
 		}
 	}
 	set(&r.Temperature, temp, 0, 50)
+	if sp != nil && r.Setpoint != nil && *sp != *r.Setpoint && *sp >= 5 && *sp <= 40 {
+		if r.ownSetpoint != nil && *r.ownSetpoint == *sp {
+			r.ownSetpoint = nil // our own write, already logged as confirmed
+		} else {
+			c.log("setpoint for %s changed from %.1f to %.1f (changed on the system, e.g. I-167 or thermostat)", r.Name, *r.Setpoint, *sp)
+		}
+	}
 	set(&r.Setpoint, sp, 5, 40)
 	set(&r.Min, min, 5, 40)
 	set(&r.Max, max, 5, 40)
@@ -439,4 +448,14 @@ func setHeating(r *Room, on bool) bool {
 	}
 	r.Heating = &on
 	return true
+}
+
+// publishRoom sends a room to clients when it changed, and otherwise at
+// least once a minute so "last update" reflects when data last arrived.
+func (c *Controller) publishRoom(r *Room, changed bool, now time.Time) {
+	if !changed && now.Sub(r.published) < time.Minute {
+		return
+	}
+	r.published = now
+	c.pub("room", r)
 }

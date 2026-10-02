@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"sync"
@@ -224,5 +225,37 @@ func TestHeatingFlag(t *testing.T) {
 		if r == nil || r.Heating == nil || *r.Heating != w {
 			t.Errorf("room 0x%02X heating = %v, want %v", addr, r.Heating, w)
 		}
+	}
+}
+
+func TestExternalSetpointLogged(t *testing.T) {
+	fr := &fakeRadio{records: loadRecords(t)}
+	var logs []string
+	logf := func(f string, a ...any) { logs = append(logs, fmt.Sprintf(f, a...)) }
+	c := NewController(fr, logf, func(string, any) {}, time.Hour)
+	c.names[0x12] = "K-E-V"
+	c.Handle(fr.records[0x4A])
+	c.nextSystem = time.Now().Add(time.Hour)
+
+	// Our own write: confirmed, but not reported as an external change.
+	c.SetSetpoint("4a", 24.5, func(error) {})
+	c.Handle(mustHex("14 FF 3C 1A 1F 80 1D 00 00 00 00 12 00 00 00 00 4B 2D 45 2D 56 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"))
+	c.Handle(mustHex("14 FF 3C 1A 1F 85 01 00 4A 00 08"))
+	c.Handle(mustHex("14 FF 3C 1A 01 17 00 52 00 0B 00 4A 00 08 10 88 00 00 64 02 4E 03 02 02 A8 03 14 02 F9 00 00"))
+	for _, l := range logs {
+		if strings.Contains(l, "changed on the system") {
+			t.Fatalf("own write logged as external: %s", l)
+		}
+	}
+	// Someone changes it on the I-167: 22.0 °C (0x02CC).
+	c.Handle(mustHex("14 FF 3C 1A 01 17 00 52 00 0B 00 4A 00 08 10 88 00 00 64 02 4E 03 02 02 A8 03 14 02 CC 00 00"))
+	found := false
+	for _, l := range logs {
+		if strings.Contains(l, "setpoint for K-E-V changed from 24.5 to 22.0") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("external change not logged: %v", logs)
 	}
 }

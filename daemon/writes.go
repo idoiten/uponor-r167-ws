@@ -133,6 +133,9 @@ func (c *Controller) confirmWrite(addr byte, raw uint16) {
 		return
 	}
 	c.log("setpoint %.1f confirmed for 0x%02X", w.value, addr)
+	if r := c.rooms[addr]; r != nil {
+		r.ownSetpoint = ptr(w.value)
+	}
 	delete(c.writes, addr)
 	w.done(nil)
 }

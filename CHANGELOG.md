@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.2.1] - 2026-10-02
+
+### Added
+- **Change setpoints from the web page.** Each room has − / + buttons
+  (0.5 °C steps, within the room's limits). The change is sent 1.5 s after
+  the last click and the page shows when the controller has confirmed it.
+- **Log line for setpoint changes made elsewhere** (I-167, thermostat or
+  the original app), e.g. `setpoint for K-E-V changed from 24.5 to 22.0
+  (changed on the system, e.g. I-167 or thermostat)`. Changes made through
+  uhomed are logged as queued/sent/confirmed as before and not repeated.
+
+### Changed
+- The web page shows when a room was last updated as relative time
+  ("updated 5 seconds ago", "updated 3 minutes ago").
+- Rooms are pushed to clients at least once a minute even when nothing
+  changed, so "last update" reflects when data last arrived.
+
 ## [0.2.0] - 2026-10-02
 
 ### Added
