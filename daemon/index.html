@@ -31,6 +31,9 @@
   .room h2 { font-size: 15px; margin: 0 0 8px; }
   .room .temp { font-size: 30px; font-variant-numeric: tabular-nums; }
   .room .sp { color: var(--accent); font-variant-numeric: tabular-nums; }
+  .room .badge { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 99px;
+                 border: 1px solid var(--line); color: var(--muted); margin-left: 8px; vertical-align: 2px; }
+  .room .badge.on { border-color: var(--accent); color: var(--accent); }
   .room .meta { font-size: 12px; color: var(--muted); margin-top: 6px; }
   .flash { animation: flash 1.2s ease-out; }
   @keyframes flash { from { box-shadow: 0 0 0 2px var(--accent); } to { box-shadow: 0 0 0 0 transparent; } }
@@ -69,12 +72,15 @@ function renderRoom(r, flash) {
   if (!el) {
     el = document.createElement("div");
     el.className = "room"; el.id = "room-" + r.id;
-    el.innerHTML = '<h2></h2><div class="temp"></div><div class="sp"></div><div class="meta"></div>';
+    el.innerHTML = '<h2></h2><div class="temp"></div><div class="sp"><span class="spv"></span><span class="badge"></span></div><div class="meta"></div>';
     document.getElementById("rooms").appendChild(el);
   }
   el.querySelector("h2").textContent = r.name;
   el.querySelector(".temp").textContent = fmt(r.temperature);
-  el.querySelector(".sp").textContent = "Setpoint " + fmt(r.setpoint);
+  el.querySelector(".spv").textContent = "Setpoint " + fmt(r.setpoint);
+  const b = el.querySelector(".badge");
+  b.textContent = r.heating === null || r.heating === undefined ? "–" : (r.heating ? "Heating" : "Idle");
+  b.className = "badge" + (r.heating ? " on" : "");
   el.querySelector(".meta").textContent =
     `Limits ${fmt(r.min)} – ${fmt(r.max)} · id ${r.id} · updated ${r.last_update ? new Date(r.last_update).toLocaleTimeString() : "–"}`;
   if (flash) { el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }

@@ -33,6 +33,9 @@ class UponorWsClient:
         self._task: asyncio.Task | None = None
         self._first_snapshot = asyncio.Event()
         self._listeners: list[Callable[[str, Any], None]] = []
+        self._ws: aiohttp.ClientWebSocketResponse | None = None
+        self._next_id = 0
+        self._results: dict[int, asyncio.Future] = {}
 
     def add_listener(self, listener: Callable[[str, Any], None]) -> Callable[[], None]:
         """Register a callback(kind, data); returns a function that removes it."""
@@ -75,6 +78,7 @@ class UponorWsClient:
             try:
                 async with self._session.ws_connect(self.url, heartbeat=30, timeout=10) as ws:
                     _LOGGER.info("Uponor R-167 WS: connected to %s", self.url)
+                    self._ws = ws
                     delay = RECONNECT_MIN
                     async for msg in ws:
                         if msg.type == aiohttp.WSMsgType.TEXT:
@@ -85,6 +89,11 @@ class UponorWsClient:
                 raise
             except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as err:
                 _LOGGER.debug("Uponor R-167 WS: connection failed: %s", err)
+            self._ws = None
+            for fut in self._results.values():
+                if not fut.done():
+                    fut.set_exception(UponorWsError("connection lost"))
+            self._results.clear()
             if self.connected:
                 _LOGGER.warning("Uponor R-167 WS: lost connection to %s, reconnecting", self.url)
                 self.connected = False
@@ -118,8 +127,35 @@ class UponorWsClient:
         elif kind == "status":
             self.status = data
             self._notify("status", data)
+        elif kind == "result":
+            fut = self._results.pop(data.get("id"), None)
+            if fut and not fut.done():
+                if data.get("success"):
+                    fut.set_result(None)
+                else:
+                    fut.set_exception(UponorWsError(data.get("error") or "command failed"))
         elif kind == "error":
             _LOGGER.warning("Uponor R-167 WS: device reported: %s", data)
+
+
+    async def set_setpoint(self, room_id: str, value: float, timeout: float = 75) -> None:
+        """Change a room's setpoint and wait until the controller confirms it."""
+        await self._command({"type": "set_setpoint", "room": room_id, "value": value}, timeout)
+
+    async def _command(self, payload: dict[str, Any], timeout: float) -> None:
+        if self._ws is None or self._ws.closed:
+            raise UponorWsError("not connected to uhomed")
+        self._next_id += 1
+        cmd_id = self._next_id
+        fut = asyncio.get_running_loop().create_future()
+        self._results[cmd_id] = fut
+        try:
+            await self._ws.send_str(json.dumps({**payload, "id": cmd_id}))
+            await asyncio.wait_for(fut, timeout)
+        except asyncio.TimeoutError as err:
+            raise UponorWsError("no answer from uhomed") from err
+        finally:
+            self._results.pop(cmd_id, None)
 
 
 async def async_probe(session: aiohttp.ClientSession, host: str, port: int) -> dict[str, Any]:

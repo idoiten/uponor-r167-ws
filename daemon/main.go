@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-const version = "0.1.1"
+const version = "0.2.0"
 
 //go:embed index.html
 var webFiles embed.FS
@@ -155,15 +155,33 @@ func main() {
 		}
 		hub.Serve(c, encode("snapshot", ctrl.Snapshot()), func(c *wsConn, b []byte) {
 			var cmd struct {
-				Type string `json:"type"`
-				ID   any    `json:"id"`
+				Type  string   `json:"type"`
+				ID    any      `json:"id"`
+				Room  string   `json:"room"`
+				Value *float64 `json:"value"`
 			}
 			if json.Unmarshal(b, &cmd) != nil {
 				return
 			}
+			reply := func(err error) {
+				res := map[string]any{"id": cmd.ID, "success": err == nil}
+				if err != nil {
+					res["error"] = err.Error()
+				}
+				select {
+				case c.out <- encode("result", res):
+				default:
+				}
+			}
 			switch cmd.Type {
 			case "get_snapshot":
 				c.out <- encode("snapshot", ctrl.Snapshot())
+			case "set_setpoint":
+				if cmd.Value == nil || cmd.Room == "" {
+					reply(fmt.Errorf("set_setpoint needs room and value"))
+					return
+				}
+				ctrl.SetSetpoint(cmd.Room, *cmd.Value, reply)
 			default:
 				c.out <- encode("error", map[string]any{"id": cmd.ID, "message": "unsupported command: " + cmd.Type})
 			}

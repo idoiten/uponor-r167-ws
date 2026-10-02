@@ -19,12 +19,23 @@
   },
   "entity": {
     "sensor": {
-      "temperature": { "name": "Temperatur" },
-      "outdoor_temperature": { "name": "Utomhustemperatur" },
-      "average_temperature": { "name": "Medelinomhustemperatur" }
+      "temperature": {
+        "name": "Temperatur"
+      },
+      "outdoor_temperature": {
+        "name": "Utomhustemperatur"
+      },
+      "average_temperature": {
+        "name": "Medelinomhustemperatur"
+      }
     },
     "binary_sensor": {
-      "radio": { "name": "Radio" }
+      "radio": {
+        "name": "Radio"
+      },
+      "heating": {
+        "name": "Värmebehov"
+      }
     }
   }
 }

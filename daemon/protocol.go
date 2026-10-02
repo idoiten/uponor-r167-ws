@@ -21,6 +21,11 @@ import (
 //   01  17  len 29  controller room data: temp [13], bitmask last 2 (no address!)
 //   01  17  len 37  controller system data: average indoor [17], outdoor [21]
 //
+//   1F  85  len 11  I-167 -> R-167: "send your change for address [8]" (see writes.go)
+//
+// The room-in-demand ("heating") flag is bit 0x40 of byte [8] in the
+// data frame and of byte [28] in the record.
+//
 // Temperatures are 0.1 °F as a signed 16-bit big-endian value.
 //
 // The R-167 answers every name frame with
@@ -61,10 +66,12 @@ type Room struct {
 	Min         *float64 `json:"min"`
 	Max         *float64 `json:"max"`
 	Bitmask     string   `json:"bitmask"`
+	Heating     *bool    `json:"heating"`
 	LastUpdate  string   `json:"last_update"`
 
 	addr    byte
 	bitmask uint16
+	block   []byte // 12 settings bytes echoed back when writing a setpoint
 }
 
 type System struct {
@@ -115,6 +122,9 @@ type Controller struct {
 	lastRequest time.Time
 	nextSystem  time.Time
 	lastMissing byte
+
+	// setpoint writes waiting to be sent or confirmed, by room address
+	writes map[byte]*pendingWrite
 }
 
 func NewController(radio Transport, logf func(string, ...any), pub func(string, any), reqInterval time.Duration) *Controller {
@@ -126,6 +136,7 @@ func NewController(radio Transport, logf func(string, ...any), pub func(string, 
 		names:           map[byte]string{},
 		chanAddr:        map[byte]byte{},
 		rooms:           map[byte]*Room{},
+		writes:          map[byte]*pendingWrite{},
 	}
 }
 
@@ -158,8 +169,14 @@ func (c *Controller) Handle(p []byte) {
 		c.onNameFrame(p, now)
 	case p[4] == 0x1F && p[5] == 0x86 && len(p) == 49 && p[6] == 0x01:
 		c.onRecord(p, now)
+	case p[4] == 0x1F && p[5] == 0x85 && len(p) == 11 && p[6] == 0x01:
+		c.onWriteQuery(p, now)
 	case p[4] == 0x01 && p[5] == 0x17 && len(p) == 31 && p[6] == 0x00:
 		c.hdrAddr, c.hdrAt = p[11], now
+		if r := c.rooms[p[11]]; r != nil {
+			r.block = append([]byte{}, p[15:27]...)
+		}
+		c.confirmWrite(p[11], u16(p, 27))
 		c.updateRoom(p[11], nil, ptr(tempC(p, 27)), ptr(tempC(p, 19)), ptr(tempC(p, 21)), now)
 	case p[4] == 0x01 && p[5] == 0x17 && len(p) == 29 && p[6] == 0x16:
 		c.onData(p, now)
@@ -183,8 +200,14 @@ func (c *Controller) onNameFrame(p []byte, now time.Time) {
 			}
 		}
 	}
-	rq := c.nextRequest(now)
-	if err := c.radio.Send([]byte{0x14, 0xFF, 0x3C, 0x1A, 0x1F, 0x80, 0x08, 0, 0, 0, 0, 0, rq, 0, 0}); err != nil {
+	// A pending setpoint change takes priority; never combine it with a
+	// record request in the same acknowledgement.
+	wf := c.writeFlag(now)
+	rq := byte(0)
+	if wf == 0 {
+		rq = c.nextRequest(now)
+	}
+	if err := c.radio.Send([]byte{0x14, 0xFF, 0x3C, 0x1A, 0x1F, 0x80, 0x08, 0, 0, 0, 0, wf, rq, 0, 0}); err != nil {
 		c.log("TX ack failed: %v", err)
 	}
 	if rq != 0 {
@@ -283,7 +306,9 @@ func (c *Controller) onRecord(p []byte, now time.Time) {
 		c.log("new room 0x%02X on channel 0x%02X (%s)", addr, ch, c.names[ch])
 	}
 	bm := u16(p, len(p)-2)
-	changed := false
+	r.block = append([]byte{}, p[11:23]...)
+	c.confirmWrite(addr, u16(p, 23))
+	changed := setHeating(r, p[28]&0x40 != 0)
 	if r.bitmask != bm {
 		r.bitmask, r.Bitmask, changed = bm, fmt.Sprintf("%04x", bm), true
 	}
@@ -312,7 +337,13 @@ func (c *Controller) onData(p []byte, now time.Time) {
 		return
 	}
 	c.hdrAt = time.Time{}
-	c.updateRoom(r.addr, ptr(tempC(p, 13)), nil, nil, nil, now)
+	heatingChanged := setHeating(r, p[8]&0x40 != 0)
+	if !c.applyValues(r, ptr(tempC(p, 13)), nil, nil, nil, now) && !heatingChanged {
+		return
+	}
+	if r.Name != "" {
+		c.pub("room", r)
+	}
 }
 
 func (c *Controller) updateRoom(addr byte, temp, sp, min, max *float64, now time.Time) {
@@ -400,3 +431,12 @@ func (c *Controller) Snapshot() Snapshot {
 }
 
 func expectedAddr(ch byte) byte { return byte(int(ch)*21 - 304) }
+
+// setHeating updates the "room in demand" flag; returns true if changed.
+func setHeating(r *Room, on bool) bool {
+	if r.Heating != nil && *r.Heating == on {
+		return false
+	}
+	r.Heating = &on
+	return true
+}

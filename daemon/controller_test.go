@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"strings"
 	"sync"
@@ -141,4 +142,87 @@ func mustHex(s string) []byte {
 		panic(err)
 	}
 	return b
+}
+
+func TestSetpointWrite(t *testing.T) {
+	fr := &fakeRadio{records: loadRecords(t)}
+	c := NewController(fr, t.Logf, func(string, any) {}, time.Hour)
+	c.names[0x12] = "K-E-V"
+	c.Handle(fr.records[0x4A])
+	c.nextSystem = time.Now().Add(time.Hour)
+
+	var result error = errors.New("not called")
+	c.SetSetpoint("4a", 24.5, func(err error) { result = err })
+
+	// 1. The next name-frame ack must flag channel 0x12 in byte [11].
+	name := mustHex("14 FF 3C 1A 1F 80 1D 00 00 00 00 11 00 00 00 00 4B 6C E4 64 76 E5 72 64 00 03 14 03 02 00 00 41 28 12 CE 00")
+	c.Handle(name)
+	ack := fr.sent[len(fr.sent)-1]
+	if want := mustHex("14 FF 3C 1A 1F 80 08 00 00 00 00 92 00 00 00"); string(ack) != string(want) {
+		t.Fatalf("ack = % X, want % X", ack, want)
+	}
+
+	// 2-3. The I-167 asks; we must answer exactly like the original firmware did.
+	c.Handle(mustHex("14 FF 3C 1A 1F 85 01 00 4A 00 08"))
+	got := fr.sent[len(fr.sent)-1]
+	want := mustHex("14 FF 3C 1A 1F 85 01 00 4A 00 08 88 00 00 64 02 4E 03 02 02 A8 03 14 02 F9 00 00 00 00 00 00")
+	if string(got) != string(want) {
+		t.Fatalf("setpoint frame\n got % X\nwant % X", got, want)
+	}
+	if crc := withCRC(got); crc[len(crc)-2] != 0xBB || crc[len(crc)-1] != 0xA3 {
+		t.Fatalf("CRC % X, captured frame had BB A3", crc[len(crc)-2:])
+	}
+	if result == nil {
+		t.Fatal("confirmed too early")
+	}
+
+	// 4. The controller's header with the new setpoint confirms it.
+	c.Handle(mustHex("14 FF 3C 1A 01 17 00 52 00 0B 00 4A 00 08 10 88 00 00 64 02 4E 03 02 02 A8 03 14 02 F9 00 00"))
+	if result != nil {
+		t.Fatalf("write not confirmed: %v", result)
+	}
+	if *c.rooms[0x4A].Setpoint != 24.5 {
+		t.Fatalf("setpoint = %v", *c.rooms[0x4A].Setpoint)
+	}
+	if len(c.writes) != 0 {
+		t.Fatal("pending write not cleared")
+	}
+}
+
+func TestSetpointValidation(t *testing.T) {
+	fr := &fakeRadio{records: loadRecords(t)}
+	c := NewController(fr, t.Logf, func(string, any) {}, time.Hour)
+	c.names[0x12] = "K-E-V"
+	c.Handle(fr.records[0x4A])
+	for _, tc := range []struct {
+		id string
+		v  float64
+	}{{"4a", 30}, {"4a", 10}, {"99", 22}, {"zz", 22}} {
+		var got error
+		c.SetSetpoint(tc.id, tc.v, func(err error) { got = err })
+		if got == nil {
+			t.Errorf("%s %.1f: expected an error", tc.id, tc.v)
+		}
+	}
+}
+
+func TestHeatingFlag(t *testing.T) {
+	data, _ := os.ReadFile("testdata_probe.bin")
+	fr := &fakeRadio{records: loadRecords(t)}
+	c := NewController(fr, t.Logf, func(string, any) {}, 0)
+	var framer Framer
+	for _, p := range framer.Push(data, true) {
+		c.Handle(p)
+		for _, rec := range fr.take() {
+			c.Handle(rec)
+		}
+	}
+	// From Home Assistant at the time: Klädvård and Sovrum 1 idle, the rest heating.
+	want := map[byte]bool{0x35: false, 0x9E: false, 0x4A: true, 0x74: true, 0x89: true, 0xB3: true, 0xC8: true, 0xDD: true, 0xF2: true}
+	for addr, w := range want {
+		r := c.rooms[addr]
+		if r == nil || r.Heating == nil || *r.Heating != w {
+			t.Errorf("room 0x%02X heating = %v, want %v", addr, r.Heating, w)
+		}
+	}
 }

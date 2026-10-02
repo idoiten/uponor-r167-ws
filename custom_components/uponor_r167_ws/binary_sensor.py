@@ -1,4 +1,4 @@
-"""Connectivity sensor for the gateway's radio link."""
+"""Binary sensors: radio connectivity and per-room heating demand."""
 
 from __future__ import annotations
 
@@ -9,12 +9,19 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 
 from .const import DOMAIN
-from .entity import UponorWsEntity
+from .entity import UponorWsEntity, UponorWsRoomEntity, setup_room_platform
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
-    client = hass.data[DOMAIN][entry.entry_id]["client"]
+    data = hass.data[DOMAIN][entry.entry_id]
+    client = data["client"]
     async_add_entities([UponorWsRadioSensor(entry, client)])
+    setup_room_platform(
+        hass,
+        entry,
+        async_add_entities,
+        lambda room_id: [UponorWsHeatingSensor(entry, client, room_id, data["gateway_device_id"])],
+    )
 
 
 class UponorWsRadioSensor(UponorWsEntity, BinarySensorEntity):
@@ -49,3 +56,18 @@ class UponorWsRadioSensor(UponorWsEntity, BinarySensorEntity):
             "records": s.get("records"),
             "rejected_data_frames": s.get("rejected_data_frames"),
         }
+
+
+class UponorWsHeatingSensor(UponorWsRoomEntity, BinarySensorEntity):
+    """On when the room asks for heat ("room in demand")."""
+
+    _attr_device_class = BinarySensorDeviceClass.HEAT
+    _attr_translation_key = "heating"
+
+    def __init__(self, entry, client, room_id, gateway_device_id) -> None:
+        super().__init__(entry, client, room_id, gateway_device_id)
+        self._attr_unique_id = f"{DOMAIN}_{room_id}_heating"
+
+    @property
+    def is_on(self) -> bool | None:
+        return (self.room or {}).get("heating")

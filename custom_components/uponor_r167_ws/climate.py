@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
-from homeassistant.components.climate import ClimateEntity, ClimateEntityFeature, HVACMode
+from homeassistant.components.climate import (
+    ATTR_TEMPERATURE,
+    ClimateEntity,
+    ClimateEntityFeature,
+    HVACAction,
+    HVACMode,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
+from .client import UponorWsError
 from .const import DOMAIN
 from .entity import UponorWsRoomEntity, setup_room_platform
 
@@ -52,10 +59,21 @@ class UponorWsClimate(UponorWsRoomEntity, ClimateEntity):
     def max_temp(self) -> float:
         return (self.room or {}).get("max") or 35.0
 
+    @property
+    def hvac_action(self) -> HVACAction | None:
+        heating = (self.room or {}).get("heating")
+        if heating is None:
+            return None
+        return HVACAction.HEATING if heating else HVACAction.IDLE
+
     async def async_set_temperature(self, **kwargs) -> None:
-        raise HomeAssistantError(
-            "Changing the setpoint is not supported yet by uponor_r167_ws (read-only release)"
-        )
+        value = kwargs.get(ATTR_TEMPERATURE)
+        if value is None:
+            return
+        try:
+            await self._client.set_setpoint(self._room_id, float(value))
+        except UponorWsError as err:
+            raise HomeAssistantError(f"Could not change the setpoint: {err}") from err
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Only heating is supported; nothing to change."""

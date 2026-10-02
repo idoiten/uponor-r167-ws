@@ -1,0 +1,138 @@
+package main
+
+import (
+	"errors"
+	"fmt"
+	"math"
+	"strconv"
+	"time"
+)
+
+// Writing a setpoint (as observed from the original firmware):
+//
+//  1. The R-167 sets byte [11] of its next name-frame acknowledgement to
+//     0x80|channel: "I have a change for this channel".
+//       14 FF 3C 1A 1F 80 08 00 00 00 00 92 00 00 00
+//  2. The I-167 asks for it with a short frame naming the room address:
+//       14 FF 3C 1A 1F 85 01 00 4A 00 08
+//  3. The R-167 answers with the room's 12 settings bytes (as seen in the
+//     controller's room header) followed by the new setpoint and six
+//     zero bytes:
+//       14 FF 3C 1A 1F 85 01 00 4A 00 08 88 00 00 64 02 4E 03 02 02 A8 03 14 02 F9 00 00 00 00 00 00
+//  4. The controller broadcasts the room header with the new setpoint,
+//     which is how the write is confirmed.
+
+const (
+	writeTimeout     = 60 * time.Second
+	writeResendAfter = 10 * time.Second
+)
+
+type pendingWrite struct {
+	addr      byte
+	ch        byte
+	raw       uint16
+	value     float64
+	created   time.Time
+	flaggedAt time.Time
+	sentAt    time.Time
+	attempts  int
+	done      func(error)
+}
+
+// cToRaw converts °C to the system's 0.1 °F encoding.
+func cToRaw(c float64) uint16 {
+	return uint16(int16(math.Round((c*1.8 + 32) * 10)))
+}
+
+// SetSetpoint queues a setpoint change for a room (id = address in hex).
+// done is called exactly once, with nil when the controller confirms the
+// new value, or with an error. It may be called with the controller lock
+// held, so it must not block.
+func (c *Controller) SetSetpoint(id string, value float64, done func(error)) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	a, err := strconv.ParseUint(id, 16, 8)
+	if err != nil {
+		done(fmt.Errorf("invalid room id %q", id))
+		return
+	}
+	addr := byte(a)
+	r := c.rooms[addr]
+	if r == nil {
+		done(fmt.Errorf("unknown room %q", id))
+		return
+	}
+	if len(r.block) != 12 {
+		done(errors.New("room settings not received yet, try again shortly"))
+		return
+	}
+	value = math.Round(value*2) / 2
+	if r.Min != nil && value < *r.Min || r.Max != nil && value > *r.Max {
+		done(fmt.Errorf("%.1f °C is outside the room's limits", value))
+		return
+	}
+	ch := byte(r.Channel)
+	if old := c.writes[addr]; old != nil {
+		old.done(errors.New("superseded by a newer setpoint"))
+	}
+	c.writes[addr] = &pendingWrite{addr: addr, ch: ch, raw: cToRaw(value), value: value, created: time.Now(), done: done}
+	c.log("setpoint %.1f queued for %s (0x%02X)", value, r.Name, addr)
+}
+
+// writeFlag returns the value for byte [11] of the next acknowledgement:
+// 0x80|channel when a write is waiting to be picked up, otherwise 0.
+func (c *Controller) writeFlag(now time.Time) byte {
+	var next *pendingWrite
+	for addr, w := range c.writes {
+		if now.Sub(w.created) > writeTimeout {
+			c.log("setpoint write for 0x%02X timed out", addr)
+			w.done(errors.New("the heating system did not confirm the new setpoint"))
+			delete(c.writes, addr)
+			continue
+		}
+		if !w.sentAt.IsZero() && now.Sub(w.sentAt) < writeResendAfter {
+			continue // sent, waiting for confirmation
+		}
+		if next == nil || w.created.Before(next.created) {
+			next = w
+		}
+	}
+	if next == nil {
+		return 0
+	}
+	next.flaggedAt = now
+	return 0x80 | next.ch
+}
+
+// onWriteQuery answers the I-167's request for a pending change.
+func (c *Controller) onWriteQuery(p []byte, now time.Time) {
+	addr := p[8]
+	w := c.writes[addr]
+	r := c.rooms[addr]
+	if w == nil || r == nil || len(r.block) != 12 {
+		c.log("write query for 0x%02X without a pending change, ignored", addr)
+		return
+	}
+	frame := []byte{0x14, 0xFF, 0x3C, 0x1A, 0x1F, 0x85, 0x01, 0x00, addr, 0x00, 0x08}
+	frame = append(frame, r.block...)
+	frame = append(frame, byte(w.raw>>8), byte(w.raw), 0, 0, 0, 0, 0, 0)
+	if err := c.radio.Send(frame); err != nil {
+		c.log("TX setpoint failed: %v", err)
+		return
+	}
+	w.sentAt = now
+	w.attempts++
+	c.log("sent setpoint %.1f to %s (0x%02X), attempt %d", w.value, r.Name, addr, w.attempts)
+}
+
+// confirmWrite completes a pending write when the system reports the
+// requested setpoint for that room.
+func (c *Controller) confirmWrite(addr byte, raw uint16) {
+	w := c.writes[addr]
+	if w == nil || w.sentAt.IsZero() || raw != w.raw {
+		return
+	}
+	c.log("setpoint %.1f confirmed for 0x%02X", w.value, addr)
+	delete(c.writes, addr)
+	w.done(nil)
+}

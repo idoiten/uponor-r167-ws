@@ -19,12 +19,23 @@
   },
   "entity": {
     "sensor": {
-      "temperature": { "name": "Temperature" },
-      "outdoor_temperature": { "name": "Outdoor temperature" },
-      "average_temperature": { "name": "Average indoor temperature" }
+      "temperature": {
+        "name": "Temperature"
+      },
+      "outdoor_temperature": {
+        "name": "Outdoor temperature"
+      },
+      "average_temperature": {
+        "name": "Average indoor temperature"
+      }
     },
     "binary_sensor": {
-      "radio": { "name": "Radio" }
+      "radio": {
+        "name": "Radio"
+      },
+      "heating": {
+        "name": "Heating demand"
+      }
     }
   }
 }
