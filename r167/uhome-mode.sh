@@ -50,6 +50,8 @@ enable_boot_scripts() {
 	done
 }
 
+running() { ps | grep -v grep | grep -q "$1"; }
+
 # monit only runs one action at a time; retry while it is busy.
 monit_do() {
 	for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
