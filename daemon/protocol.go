@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"math"
 	"sort"
 	"sync"
 	"time"
@@ -42,9 +41,16 @@ var systemID = []byte{0x14, 0xFF, 0x3C, 0x1A}
 const systemRecordAddr = 0x22
 
 func tempC(b []byte, i int) float64 {
-	raw := int16(uint16(b[i])<<8 | uint16(b[i+1]))
-	c := (float64(raw)/10 - 32) / 1.8
-	return math.Round(c*10) / 10
+	return rawToC(int16(uint16(b[i])<<8 | uint16(b[i+1])))
+}
+
+// rawToC converts the system's 0.1 °F encoding to °C with one decimal,
+// truncated toward zero like the I-167 display does (73.0 °F = 22.78 °C
+// shows as 22.7). Integer arithmetic, so float error cannot move a value
+// across a tenth. Setpoints in half degrees are exact either way.
+func rawToC(raw int16) float64 {
+	tenths := (int(raw) - 320) * 5 / 9 // Go division truncates toward zero
+	return float64(tenths) / 10
 }
 
 func u16(b []byte, i int) uint16 { return uint16(b[i])<<8 | uint16(b[i+1]) }

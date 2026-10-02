@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.3] - 2026-10-02
+
+### Changed
+- Temperatures (rooms, outdoor, average indoor) are now truncated to one
+  decimal instead of rounded, like the I-167 display does: 73.0 °F
+  (22.78 °C) is shown as 22.7, not 22.8. HA and the web page now match the
+  I-167 and uponor-x165. The conversion uses integer arithmetic, so float
+  error cannot move a value across a tenth. Setpoints and limits are
+  unaffected (half degrees are exact in Uponor's 0.1 °F encoding).
+
 ## [0.4.2] - 2026-10-02
 
 ### Fixed

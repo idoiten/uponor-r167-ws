@@ -308,3 +308,33 @@ func TestAlarmRegisterLogged(t *testing.T) {
 		t.Fatal("registers missing from snapshot")
 	}
 }
+
+func TestRawToCTruncates(t *testing.T) {
+	cases := []struct {
+		raw  int16
+		want float64
+	}{
+		{730, 22.7},  // 22.78 °C, the I-167 shows 22.7
+		{731, 22.8},  // 22.83
+		{713, 21.8},  // 21.83
+		{714, 21.8},  // 21.89
+		{770, 25.0},  // setpoint 25.0, exact
+		{761, 24.5},  // setpoint 24.5, exact
+		{590, 15.0},  // limit 15.0, exact
+		{320, 0.0},   // 32.0 °F
+		{310, -0.5},  // 31.0 °F = -0.56 °C
+		{140, -10.0}, // 14.0 °F, exact
+		{139, -10.0}, // 13.9 °F = -10.06 °C
+	}
+	for _, c := range cases {
+		if got := rawToC(c.raw); got != c.want {
+			t.Errorf("rawToC(%d) = %v, want %v", c.raw, got, c.want)
+		}
+	}
+	// every half degree used for setpoints round-trips exactly
+	for v := 5.0; v <= 35.0; v += 0.5 {
+		if got := rawToC(int16(cToRaw(v))); got != v {
+			t.Errorf("setpoint %.1f round-trips to %v", v, got)
+		}
+	}
+}
