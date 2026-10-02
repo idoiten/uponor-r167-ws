@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.1] - 2026-10-02
+
+### Changed
+- `uhome-mode.sh custom` now also stops Uponor's cloud VPN (`openvpn`),
+  software update (`softwareupdate`) and FTP server (`vsftpd`), and
+  disables the boot scripts that would start openvpn and vsftpd again
+  after a reboot. They do nothing useful without the original software,
+  and an outbound VPN to the vendor plus an unencrypted FTP server are
+  needless openings into the home network. `original` restores the boot
+  scripts and starts the services again.
+
 ## [0.3.0] - 2026-10-02
 
 ### Added

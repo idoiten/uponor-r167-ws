@@ -31,6 +31,10 @@ ssh root@<r167> 'cat > /mnt/UserFS/uhome-mode.sh' < r167/uhome-mode.sh
 ssh root@<r167> 'chmod +x /mnt/UserFS/uhomed /mnt/UserFS/uhome-mode.sh; /mnt/UserFS/uhome-mode.sh install'
 ```
 
+In custom mode the script also stops Uponor's cloud VPN, software update
+and FTP server (and keeps them from starting at boot); `original` brings
+them back.
+
 `install` adds uhomed to monit (a backup of `/etc/monitrc` is kept as
 `/etc/monitrc.orig`) and leaves the gateway in **original** mode.
 

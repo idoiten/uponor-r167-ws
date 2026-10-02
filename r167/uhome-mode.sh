@@ -3,13 +3,33 @@
 #
 #   uhome-mode.sh install   add uhomed to monit (stays in original mode)
 #   uhome-mode.sh custom    stop platform + KickWatchdog, run uhomed
+#                           (also stops Uponor's cloud VPN, software update
+#                           and FTP server, which are useless without platform)
 #   uhome-mode.sh original  stop uhomed, run platform + KickWatchdog
+#                           and the Uponor services again
 #   uhome-mode.sh status    show which mode is active
 #
 # The chosen mode survives reboots (monit remembers what it monitors).
 
 UHOMED=/mnt/UserFS/uhomed
 MONITRC=/etc/monitrc
+# Uponor services that only make sense with the original software.
+# openvpn and vsftpd are also started at boot by /etc/init.d, so their
+# boot scripts are renamed (and restored) as well.
+EXTRA_SERVICES="openvpn softwareupdate vsftpd"
+BOOT_SCRIPTS="S60openvpn S70vsftpd"
+
+disable_boot_scripts() {
+	for s in $BOOT_SCRIPTS; do
+		[ -f /etc/init.d/$s ] && mv /etc/init.d/$s /etc/init.d/off.$s
+	done
+}
+
+enable_boot_scripts() {
+	for s in $BOOT_SCRIPTS; do
+		[ -f /etc/init.d/off.$s ] && mv /etc/init.d/off.$s /etc/init.d/$s
+	done
+}
 
 running() { ps | grep -v grep | grep -q "$1"; }
 
@@ -57,6 +77,13 @@ EOF
 	echo "installed (mode: original). Use '$0 custom' to switch."
 	;;
 custom)
+	for s in $EXTRA_SERVICES; do monit_do stop $s; done
+	# monit runs the stop scripts asynchronously; let them finish before
+	# the boot scripts are renamed
+	wait_gone openvpn || killall openvpn 2>/dev/null
+	wait_gone vsftpd || killall vsftpd 2>/dev/null
+	wait_gone /mnt/UserFS/softwareupdate || killall softwareupdate 2>/dev/null
+	disable_boot_scripts
 	monit_do stop platform
 	monit_do stop KickWatchdog
 	wait_gone /mnt/UserFS/platform || { killall platform 2>/dev/null; wait_gone /mnt/UserFS/platform; }
@@ -78,6 +105,8 @@ original)
 	monit_do start KickWatchdog
 	wait_running KickWatchdog || echo "warning: KickWatchdog not running"
 	monit_do start platform
+	enable_boot_scripts
+	for s in $EXTRA_SERVICES; do monit_do start $s; done
 	if wait_running /mnt/UserFS/platform; then
 		echo "mode: original (Uponor platform)"
 	else
@@ -88,7 +117,7 @@ status)
 	if running "$UHOMED"; then echo "mode: custom (uhomed running)"
 	elif running /mnt/UserFS/platform; then echo "mode: original (platform running)"
 	else echo "mode: unknown - neither uhomed nor platform is running"; fi
-	monit summary | grep -E "platform|KickWatchdog|uhomed"
+	monit summary | grep -E "platform|KickWatchdog|uhomed|openvpn|softwareupdate|vsftpd"
 	;;
 *)
 	echo "usage: $0 install|custom|original|status"
