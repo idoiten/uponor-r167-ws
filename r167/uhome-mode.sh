@@ -13,8 +13,28 @@ MONITRC=/etc/monitrc
 
 running() { ps | grep -v grep | grep -q "$1"; }
 
+# monit only runs one action at a time; retry while it is busy.
+monit_do() {
+	for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+		out=$(monit "$1" "$2" 2>&1)
+		case "$out" in
+		*"in progress"*) sleep 2 ;;
+		*) return 0 ;;
+		esac
+	done
+	echo "monit $1 $2: still busy, giving up"
+	return 1
+}
+
 wait_gone() {
-	for i in 1 2 3 4 5 6 7 8 9 10; do running "$1" || return 0; sleep 0.5; done
+	i=0
+	while [ $i -lt 30 ]; do running "$1" || return 0; sleep 1; i=$((i + 1)); done
+	return 1
+}
+
+wait_running() {
+	i=0
+	while [ $i -lt 30 ]; do running "$1" && return 0; sleep 1; i=$((i + 1)); done
 	return 1
 }
 
@@ -33,38 +53,36 @@ EOF
 	monit -t || { echo "monitrc invalid, restoring backup"; cp -p "$MONITRC.orig" "$MONITRC"; exit 1; }
 	monit reload
 	sleep 5
-	monit unmonitor uhomed
+	monit_do stop uhomed
 	echo "installed (mode: original). Use '$0 custom' to switch."
 	;;
 custom)
-	monit unmonitor platform
-	monit unmonitor KickWatchdog
-	killall platform 2>/dev/null
-	killall KickWatchdog 2>/dev/null
-	wait_gone KickWatchdog || echo "warning: KickWatchdog still running"
-	wait_gone /mnt/UserFS/platform || echo "warning: platform still running"
+	monit_do stop platform
+	monit_do stop KickWatchdog
+	wait_gone /mnt/UserFS/platform || { killall platform 2>/dev/null; wait_gone /mnt/UserFS/platform; }
+	wait_gone KickWatchdog || { killall KickWatchdog 2>/dev/null; wait_gone KickWatchdog; }
 	# The hardware watchdog keeps counting (60 s) until uhomed opens it.
-	monit monitor uhomed
-	monit start uhomed
-	sleep 5
-	if running "$UHOMED"; then
+	monit_do start uhomed
+	if wait_running "$UHOMED"; then
 		echo "mode: custom (uhomed on port 8765)"
 	else
 		echo "uhomed did not start - switching back to original"
+		tail -5 /tmp/uhomed.log 2>/dev/null
 		"$0" original
 		exit 1
 	fi
 	;;
 original)
-	monit unmonitor uhomed
-	killall uhomed 2>/dev/null   # disarms the watchdog on exit
-	wait_gone "$UHOMED" || echo "warning: uhomed still running"
-	monit monitor KickWatchdog
-	monit start KickWatchdog
-	sleep 3
-	monit monitor platform
-	monit start platform
-	echo "mode: original (Uponor platform)"
+	monit_do stop uhomed
+	wait_gone "$UHOMED" || { killall uhomed 2>/dev/null; wait_gone "$UHOMED"; }
+	monit_do start KickWatchdog
+	wait_running KickWatchdog || echo "warning: KickWatchdog not running"
+	monit_do start platform
+	if wait_running /mnt/UserFS/platform; then
+		echo "mode: original (Uponor platform)"
+	else
+		echo "warning: platform not running yet - check 'monit summary'"
+	fi
 	;;
 status)
 	if running "$UHOMED"; then echo "mode: custom (uhomed running)"
