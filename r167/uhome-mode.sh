@@ -15,23 +15,40 @@ UHOMED=/mnt/UserFS/uhomed
 MONITRC=/etc/monitrc
 # Uponor services that only make sense with the original software.
 # openvpn and vsftpd are also started at boot by /etc/init.d, so their
-# boot scripts are renamed (and restored) as well.
+# boot scripts are wrapped (and restored) as well.
 EXTRA_SERVICES="openvpn softwareupdate vsftpd"
 BOOT_SCRIPTS="S60openvpn S70vsftpd"
 
+# Flag file: when present, the wrapped boot scripts do not start their
+# service. The original scripts are kept as off.<name> and a small
+# wrapper takes their place, so monit's configuration still finds the
+# programs it refers to.
+FLAG=/mnt/UserFS/.uhome-custom
+
 disable_boot_scripts() {
+	touch "$FLAG"
 	for s in $BOOT_SCRIPTS; do
-		[ -f /etc/init.d/$s ] && mv /etc/init.d/$s /etc/init.d/off.$s
+		f=/etc/init.d/$s
+		[ -f /etc/init.d/off.$s ] || mv "$f" /etc/init.d/off.$s
+		cat > "$f" <<EOF
+#!/bin/sh
+# uhome-mode.sh wrapper: original script is /etc/init.d/off.$s
+if [ "\$1" = start ] && [ -f $FLAG ]; then
+	echo "$s: disabled while uhomed runs (uhome-mode.sh custom)"
+	exit 0
+fi
+exec /etc/init.d/off.$s "\$@"
+EOF
+		chmod 755 "$f"
 	done
 }
 
 enable_boot_scripts() {
+	rm -f "$FLAG"
 	for s in $BOOT_SCRIPTS; do
 		[ -f /etc/init.d/off.$s ] && mv /etc/init.d/off.$s /etc/init.d/$s
 	done
 }
-
-running() { ps | grep -v grep | grep -q "$1"; }
 
 # monit only runs one action at a time; retry while it is busy.
 monit_do() {
