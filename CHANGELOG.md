@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.1] - 2026-10-02
+
+### Fixed
+- `uhome-mode.sh` collided with monit ("Other action already in progress"),
+  so `custom` never started uhomed and fell back to the original mode. It
+  now issues one monit action per service, retries while monit is busy and
+  waits for the process to actually start or stop.
+
+### Changed
+- uhomed now requests records for rooms it has not heard from yet before
+  refreshing known rooms, so all rooms appear sooner after start-up
+  (previously a room could wait for a full round-robin cycle).
+
 ## [0.1.0] - 2026-10-02
 
 First version (read-only).

@@ -114,6 +114,7 @@ type Controller struct {
 	pendingAt   time.Time
 	lastRequest time.Time
 	nextSystem  time.Time
+	lastMissing byte
 }
 
 func NewController(radio Transport, logf func(string, ...any), pub func(string, any), reqInterval time.Duration) *Controller {
@@ -206,17 +207,34 @@ func (c *Controller) nextRequest(now time.Time) byte {
 		c.lastRequest, c.pendingAt, c.pendingCh = now, now, 0x10
 		return 0x90
 	}
-	if len(c.queue) == 0 {
-		for ch := range c.names {
-			c.queue = append(c.queue, ch)
+	// Rooms we have never received a record for go first.
+	var missing []byte
+	for ch := range c.names {
+		if _, ok := c.chanAddr[ch]; !ok {
+			missing = append(missing, ch)
 		}
-		sort.Slice(c.queue, func(i, j int) bool { return c.queue[i] < c.queue[j] })
 	}
-	if len(c.queue) == 0 {
-		return 0
+	var ch byte
+	if len(missing) > 0 {
+		sort.Slice(missing, func(i, j int) bool { return missing[i] < missing[j] })
+		ch = missing[0]
+		if c.lastMissing == ch && len(missing) > 1 {
+			ch = missing[1] // don't get stuck on one room that never answers
+		}
+		c.lastMissing = ch
+	} else {
+		if len(c.queue) == 0 {
+			for k := range c.names {
+				c.queue = append(c.queue, k)
+			}
+			sort.Slice(c.queue, func(i, j int) bool { return c.queue[i] < c.queue[j] })
+		}
+		if len(c.queue) == 0 {
+			return 0
+		}
+		ch = c.queue[0]
+		c.queue = c.queue[1:]
 	}
-	ch := c.queue[0]
-	c.queue = c.queue[1:]
 	c.lastRequest, c.pendingAt, c.pendingCh = now, now, ch
 	return 0x80 | ch
 }

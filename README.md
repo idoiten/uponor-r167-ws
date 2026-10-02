@@ -26,7 +26,6 @@ X-165 ⇄ I-167 ⇄ (868 MHz) ⇄ R-167 running uhomed ── WebSocket :8765 �
 ## Install on the R-167
 
 ```bash
-
 ssh root@<r167> 'cat > /mnt/UserFS/uhomed' < r167/uhomed
 ssh root@<r167> 'cat > /mnt/UserFS/uhome-mode.sh' < r167/uhome-mode.sh
 ssh root@<r167> 'chmod +x /mnt/UserFS/uhomed /mnt/UserFS/uhome-mode.sh; /mnt/UserFS/uhome-mode.sh install'
