@@ -227,7 +227,7 @@ function connect() {
       if (isNew) sortRooms();
     } else if (m.type === "system") {
       renderSystem(m.data);
-    } else if (m.type === "status") {
+    } else if (m.type === "status" || m.type === "stats") {
       status = m.data;
     } else if (m.type === "result") {
       onResult(m.data);

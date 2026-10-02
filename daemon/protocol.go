@@ -428,9 +428,13 @@ func (c *Controller) statusLocked(now time.Time) Status {
 	return s
 }
 
-// Watch publishes a status message when the radio goes silent.
+// Watch publishes a status message when the radio goes silent, and a
+// "stats" message with the current counters every 10 s while frames
+// keep arriving. The web page uses "stats" to keep its footer current;
+// the HA integration ignores it, so its diagnostic attributes do not
+// change (and get recorded) every 10 s.
 func (c *Controller) Watch() {
-	last := true
+	last, lastFrames := true, -1
 	for range time.Tick(10 * time.Second) {
 		c.mu.Lock()
 		now := time.Now()
@@ -439,6 +443,10 @@ func (c *Controller) Watch() {
 			c.pub("status", c.statusLocked(now))
 		}
 		last = ok
+		if c.frames != lastFrames {
+			c.pub("stats", c.statusLocked(now))
+			lastFrames = c.frames
+		}
 		c.mu.Unlock()
 	}
 }

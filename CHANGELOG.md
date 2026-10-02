@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.1] - 2026-10-02
+
+### Changed
+- The web page footer (uhomed version, frames, records, rejected data
+  frames) now updates live. uhomed pushes a new `stats` message with the
+  counters every 10 s while radio traffic arrives. The HA integration
+  ignores it, so the radio sensor's attributes are not rewritten (and
+  recorded) every 10 s.
+
 ## [0.4.0] - 2026-10-02
 
 ### Added
