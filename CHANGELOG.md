@@ -5,8 +5,11 @@
 ### Changed
 - `uhome-mode.sh custom` now also stops Uponor's cloud VPN (`openvpn`),
   software update (`softwareupdate`) and FTP server (`vsftpd`), and
-  disables the boot scripts that would start openvpn and vsftpd again
-  after a reboot. They do nothing useful without the original software,
+  keeps openvpn and vsftpd from starting again at boot: their boot
+  scripts are replaced by small wrappers that skip `start` while
+  `/mnt/UserFS/.uhome-custom` exists. The originals are kept as
+  `off.S60openvpn` / `off.S70vsftpd`, so monit's configuration stays
+  valid. They do nothing useful without the original software,
   and an outbound VPN to the vendor plus an unencrypted FTP server are
   needless openings into the home network. `original` restores the boot
   scripts and starts the services again.
