@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.2] - 2026-10-02
+
+### Fixed
+- Integration: when uhomed restarts, its first snapshot has no rooms
+  until it has relearned them over the radio. The thermostats now keep
+  their last values meanwhile instead of all turning unavailable.
+
+### Docs
+- README: the R-167 must stay linked (U@home) in the I-167, and how to
+  link it again (original mode, hold the link button until the RF-link
+  LED lights, add it from the I-167, back to custom mode).
+
 ## [0.4.1] - 2026-10-02
 
 ### Changed

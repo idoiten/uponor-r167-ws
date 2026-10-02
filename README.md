@@ -49,6 +49,21 @@ ssh root@<r167> /mnt/UserFS/uhome-mode.sh status
 In custom mode, open `http://<r167>:8765/` for a live overview.
 uhomed logs to `/tmp/uhomed.log`.
 
+### Keep the R-167 linked to the I-167
+
+uhomed gets all room data from the I-167 interface, which polls the R-167
+over the radio. **Do not remove the R-167 (U@home) from the I-167** – if
+you do, the I-167 stops polling and no rooms show up (the radio still
+looks OK, because the X-165's own broadcasts keep arriving).
+
+To link it again, use the original software – the R-167's link button
+and RF-link LED are handled by Uponor's `platform`, not by uhomed:
+
+1. `uhome-mode.sh original`
+2. Hold the small button on the R-167 for a few seconds until the RF-link
+   LED lights up, then add the device from the I-167.
+3. `uhome-mode.sh custom`
+
 ## Install the Home Assistant integration
 
 Copy `custom_components/uponor_r167_ws` to your Home Assistant

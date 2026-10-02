@@ -113,7 +113,11 @@ class UponorWsClient:
             self.system = data.get("system", {})
             new = {r["id"]: r for r in data.get("rooms", [])}
             added = [rid for rid in new if rid not in self.rooms]
-            self.rooms = new
+            # Merge instead of replace: right after uhomed restarts its
+            # snapshot is empty until it has relearned the rooms over the
+            # radio, and the entities should keep their last values
+            # meanwhile instead of all turning unavailable.
+            self.rooms.update(new)
             self.connected = True
             self._first_snapshot.set()
             self._notify("snapshot", added)
