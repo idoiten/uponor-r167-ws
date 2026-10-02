@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Uponor R-167</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #1d2330; --muted: #6b7380;
+    --line: #e3e6eb; --accent: #d9480f; --ok: #2b8a3e; --bad: #c92a2a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14171c; --card: #1d2128; --text: #e6e8eb; --muted: #9098a3;
+            --line: #2c313a; --accent: #ff8a4c; --ok: #51cf66; --bad: #ff6b6b; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 900px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 20px; margin: 0; }
+  .status { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--bad); }
+  .dot.ok { background: var(--ok); }
+  .system { display: flex; gap: 12px; margin: 20px 0; flex-wrap: wrap; }
+  .tile { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; min-width: 160px; }
+  .tile .label { font-size: 12px; color: var(--muted); }
+  .tile .value { font-size: 24px; font-variant-numeric: tabular-nums; }
+  .rooms { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+  .room { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .room h2 { font-size: 15px; margin: 0 0 8px; }
+  .room .temp { font-size: 30px; font-variant-numeric: tabular-nums; }
+  .room .sp { color: var(--accent); font-variant-numeric: tabular-nums; }
+  .room .meta { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .flash { animation: flash 1.2s ease-out; }
+  @keyframes flash { from { box-shadow: 0 0 0 2px var(--accent); } to { box-shadow: 0 0 0 0 transparent; } }
+  footer { margin-top: 28px; font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Uponor R-167</h1>
+    <div class="status"><span class="dot" id="dot"></span><span id="status">Connecting…</span></div>
+  </header>
+  <section class="system">
+    <div class="tile"><div class="label">Outdoor</div><div class="value" id="outdoor">–</div></div>
+    <div class="tile"><div class="label">Average indoor</div><div class="value" id="average">–</div></div>
+  </section>
+  <section class="rooms" id="rooms"></section>
+  <footer id="footer"></footer>
+</main>
+<script>
+const rooms = new Map();
+let status = null, connected = false;
+const fmt = v => (v === null || v === undefined) ? "–" : v.toFixed(1) + " °C";
+
+function renderStatus() {
+  const ok = connected && status && status.radio_ok;
+  document.getElementById("dot").className = "dot" + (ok ? " ok" : "");
+  document.getElementById("status").textContent =
+    !connected ? "Disconnected – retrying" : (status && status.radio_ok ? "Radio OK" : "No radio traffic");
+  if (status) document.getElementById("footer").textContent =
+    `uhomed ${status.version} · frames ${status.frames} · records ${status.records} · rejected data frames ${status.rejected_data_frames}`;
+}
+
+function renderRoom(r, flash) {
+  let el = document.getElementById("room-" + r.id);
+  if (!el) {
+    el = document.createElement("div");
+    el.className = "room"; el.id = "room-" + r.id;
+    el.innerHTML = '<h2></h2><div class="temp"></div><div class="sp"></div><div class="meta"></div>';
+    document.getElementById("rooms").appendChild(el);
+  }
+  el.querySelector("h2").textContent = r.name;
+  el.querySelector(".temp").textContent = fmt(r.temperature);
+  el.querySelector(".sp").textContent = "Setpoint " + fmt(r.setpoint);
+  el.querySelector(".meta").textContent =
+    `Limits ${fmt(r.min)} – ${fmt(r.max)} · id ${r.id} · updated ${r.last_update ? new Date(r.last_update).toLocaleTimeString() : "–"}`;
+  if (flash) { el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
+}
+
+function sortRooms() {
+  const box = document.getElementById("rooms");
+  [...rooms.values()].sort((a, b) => a.channel - b.channel)
+    .forEach(r => box.appendChild(document.getElementById("room-" + r.id)));
+}
+
+function renderSystem(s) {
+  document.getElementById("outdoor").textContent = fmt(s.outdoor_temperature);
+  document.getElementById("average").textContent = fmt(s.average_temperature);
+}
+
+function connect() {
+  const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+  ws.onopen = () => { connected = true; renderStatus(); };
+  ws.onclose = () => { connected = false; renderStatus(); setTimeout(connect, 3000); };
+  ws.onmessage = ev => {
+    const m = JSON.parse(ev.data);
+    if (m.type === "snapshot") {
+      status = m.data.status; renderSystem(m.data.system);
+      document.getElementById("rooms").innerHTML = ""; rooms.clear();
+      m.data.rooms.forEach(r => { rooms.set(r.id, r); renderRoom(r, false); });
+      sortRooms();
+    } else if (m.type === "room") {
+      const isNew = !rooms.has(m.data.id);
+      rooms.set(m.data.id, m.data); renderRoom(m.data, !isNew);
+      if (isNew) sortRooms();
+    } else if (m.type === "system") {
+      renderSystem(m.data);
+    } else if (m.type === "status") {
+      status = m.data;
+    }
+    renderStatus();
+  };
+}
+connect();
+</script>
+</body>
+</html>

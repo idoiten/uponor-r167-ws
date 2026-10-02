@@ -1,0 +1,30 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Uponor R-167 (uhomed)",
+        "description": "Anslut till uhomed som körs på Uponor R-167.",
+        "data": {
+          "host": "Värd",
+          "port": "Port"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Kunde inte ansluta till uhomed. Kontrollera adressen och att R-167 är i eget läge (custom)."
+    },
+    "abort": {
+      "already_configured": "Den här gatewayen är redan konfigurerad."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "temperature": { "name": "Temperatur" },
+      "outdoor_temperature": { "name": "Utomhustemperatur" },
+      "average_temperature": { "name": "Medelinomhustemperatur" }
+    },
+    "binary_sensor": {
+      "radio": { "name": "Radio" }
+    }
+  }
+}

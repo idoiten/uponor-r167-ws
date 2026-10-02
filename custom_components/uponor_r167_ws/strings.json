@@ -1,0 +1,30 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Uponor R-167 (uhomed)",
+        "description": "Connect to uhomed running on the Uponor R-167 gateway.",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not connect to uhomed. Check the address and that the R-167 is in custom mode."
+    },
+    "abort": {
+      "already_configured": "This gateway is already configured."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "temperature": { "name": "Temperature" },
+      "outdoor_temperature": { "name": "Outdoor temperature" },
+      "average_temperature": { "name": "Average indoor temperature" }
+    },
+    "binary_sensor": {
+      "radio": { "name": "Radio" }
+    }
+  }
+}
