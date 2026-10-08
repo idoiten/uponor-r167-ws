@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.7.1] - 2026-10-08
+
+### Changed
+- Web page: rooms are sorted alphabetically by name (they were sorted by
+  channel), and re-sorted if a room is renamed on the I-167.
+- Web page: the raw register values (35/3D/3E/3F) are no longer shown on
+  the room cards. They are still available as `register_*` attributes on
+  the climate entities in HA.
+- README: 3F `0x0400` is "cooling allowed" as reported back by the system
+  (it cleared in every room when cooling was disabled on the I-167).
+
 ## [0.7.0] - 2026-10-08
 
 ### Added

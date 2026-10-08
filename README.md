@@ -115,10 +115,11 @@ Register bits, from the register map in Uponor's own gateway software
 | 3E | `0040` | battery alarm |
 | 3F | `0007` | thermostat type (0 analog, 1 public, 2 digital, 3 digital programmable) |
 | 3F | `0300` | regulation mode |
+| 3F | `0400` | cooling allowed, as reported back (cleared in every room when cooling was disabled on the I-167) ✓ |
 
 Not used by Uponor's software: 3D `0001` and `0200` (`0200` follows an
-active alarm), 3E `8000` (appears after a thermostat restart), 3F `0400`
-and `0800` (`0800` while a thermostat starts up).
+active alarm), 3E `8000` (appears after a thermostat restart), 3F `0800`
+(while a thermostat starts up).
 
 Client commands:
 

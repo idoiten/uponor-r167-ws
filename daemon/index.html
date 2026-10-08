@@ -93,9 +93,7 @@ function ago(ts) {
 }
 
 function metaText(r) {
-  const g = r.registers || {};
-  const regs = g["3d"] ? ` · 35 ${g["35"] || "–"} 3D ${g["3d"]} 3E ${g["3e"]} 3F ${g["3f"]}` : "";
-  return `Limits ${fmt(r.min)} – ${fmt(r.max)}${regs} · updated ${ago(r.last_update)}`;
+  return `Limits ${fmt(r.min)} – ${fmt(r.max)} · updated ${ago(r.last_update)}`;
 }
 
 function renderStatus() {
@@ -209,7 +207,7 @@ function renderRoom(r, flash) {
 
 function sortRooms() {
   const box = document.getElementById("rooms");
-  [...rooms.values()].sort((a, b) => a.channel - b.channel)
+  [...rooms.values()].sort((a, b) => (a.name || "").localeCompare(b.name || "", "sv") || a.channel - b.channel)
     .forEach(r => box.appendChild(document.getElementById("room-" + r.id)));
 }
 
@@ -239,9 +237,9 @@ function connect() {
       m.data.rooms.forEach(r => { rooms.set(r.id, r); renderRoom(r, false); });
       sortRooms();
     } else if (m.type === "room") {
-      const isNew = !rooms.has(m.data.id);
-      rooms.set(m.data.id, m.data); renderRoom(m.data, !isNew);
-      if (isNew) sortRooms();
+      const prev = rooms.get(m.data.id);
+      rooms.set(m.data.id, m.data); renderRoom(m.data, !!prev);
+      if (!prev || prev.name !== m.data.name) sortRooms();
     } else if (m.type === "system") {
       renderSystem(m.data);
     } else if (m.type === "device") {
