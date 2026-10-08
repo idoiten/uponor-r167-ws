@@ -574,3 +574,59 @@ func TestWatchLogsChanges(t *testing.T) {
 		t.Fatalf("rate limit not applied: %d lines", len(logs))
 	}
 }
+
+func TestEcoModeFromTouchScreen(t *testing.T) {
+	var pubs []string
+	pub := func(typ string, d any) { pubs = append(pubs, string(encode(typ, d))) }
+	var logs []string
+	logf := func(f string, a ...any) { logs = append(logs, fmt.Sprintf(f, a...)) }
+	c := NewController(&fakeRadio{}, logf, pub, time.Hour)
+	// Captured 2026-10-08: Home, then Away 15 s after it was chosen on the I-167.
+	home := mustHex("14 ff 3c 1a ff 17 00 00 00 00 00 00 00 0e 1c 80 00 00 00 31 21 02 72 00 01 00 00 00 00 00 00 0d 53 43 95 00 22 00 00 00 24 00 24")
+	away := mustHex("14 ff 3c 1a ff 17 00 00 00 00 00 00 00 0e 1c 88 00 00 00 31 21 02 72 00 01 00 00 00 00 00 00 0d 53 43 95 00 33 00 00 00 24 00 24")
+	c.Handle(home)
+	if c.system.EcoMode == nil || *c.system.EcoMode {
+		t.Fatal("ECO mode should be off")
+	}
+	c.Handle(away)
+	if !*c.system.EcoMode || !hasLog(logs, "ECO mode (Home/Away on the I-167): true") {
+		t.Fatalf("ECO mode not raised: %v", logs)
+	}
+	if last := pubs[len(pubs)-1]; !strings.Contains(last, `"eco_mode":true`) {
+		t.Fatalf("system message = %s", last)
+	}
+	// The running clock alone must not produce watch lines.
+	n := len(logs)
+	away2 := append([]byte{}, away...)
+	away2[35] = 0x40
+	c.Handle(away2)
+	if len(logs) != n {
+		t.Fatalf("clock change logged: %v", logs[n:])
+	}
+}
+
+func TestProbeFlagsSystemChange(t *testing.T) {
+	fr := &fakeRadio{records: loadRecords(t)}
+	var logs []string
+	logf := func(f string, a ...any) { logs = append(logs, fmt.Sprintf(f, a...)) }
+	c := NewController(fr, logf, func(string, any) {}, time.Hour)
+	c.names[0x12] = "K-E-V"
+	c.Handle(fr.records[0x4A])
+	c.nextSystem = time.Now().Add(time.Hour)
+	c.ProbeSystemWrite(time.Minute)
+	c.Handle(mustHex("14 FF 3C 1A 1F 80 1D 00 00 00 00 11 00 00 00 00 4B 6C E4 64 76 E5 72 64 00 03 14 03 02 00 00 41 28 12 CE 00"))
+	if ack := fr.sent[len(fr.sent)-1]; ack[11] != 0x90 || ack[12] != 0 {
+		t.Fatalf("ack = % X, want 90 in [11] and no request", ack)
+	}
+	sent := len(fr.sent)
+	c.Handle(mustHex("14 FF 3C 1A 1F 85 01 00 22 00 08")) // hypothetical system query
+	if len(fr.sent) != sent {
+		t.Fatal("the probe must not answer")
+	}
+	if !c.probeUntil.IsZero() {
+		t.Fatal("probe should stop after the first query")
+	}
+	if !hasLog(logs, "write query for 0x22 without a pending change, ignored: 14 FF 3C 1A 1F 85 01 00 22 00 08") {
+		t.Fatalf("query not logged: %v", logs)
+	}
+}

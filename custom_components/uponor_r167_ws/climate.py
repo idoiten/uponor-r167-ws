@@ -64,7 +64,17 @@ class UponorWsClimate(UponorWsRoomEntity, ClimateEntity):
 
     @property
     def preset_mode(self) -> str | None:
-        eco = (self.room or {}).get("eco_active")
+        # The room runs ECO when the system is in ECO mode (Away on the
+        # I-167, known within seconds) and the thermostat's switch allows
+        # it. The room's own ECO status (3D 0x0008) only refreshes when the
+        # I-167 polls the room, which can take minutes; it is the fallback.
+        room = self.room or {}
+        mode = self._client.system.get("eco_mode")
+        allowed = room.get("eco_allowed")
+        if mode is not None and allowed is not None:
+            eco = mode and allowed
+        else:
+            eco = room.get("eco_active")
         if eco is None:
             return None
         return PRESET_ECO if eco else PRESET_COMFORT

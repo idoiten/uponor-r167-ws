@@ -83,7 +83,7 @@ Connect to `ws://<r167>:8765/ws`. The server sends JSON messages
 |---|---|
 | `snapshot` | `{status, system, device, rooms[]}` – sent on connect and on request |
 | `room` | one room, sent when any of its values change |
-| `system` | `{outdoor_temperature, average_temperature}` |
+| `system` | `{outdoor_temperature, average_temperature, eco_mode}` – `eco_mode` is Home/Away on the I-167 |
 | `status` | `{version, radio_ok, last_frame, frames, records, rejected_data_frames}` – when the radio comes or goes |
 | `stats` | same as `status`, every 10 s while frames arrive (for the web page's counters) |
 | `device` | `{temperature}` – the R-167's processor temperature in °C, when it changes (read every minute) |
@@ -120,6 +120,11 @@ Register bits, from the register map in Uponor's own gateway software
 | 3F | `0300` | regulation mode |
 | 3F | `0400` | cooling allowed, as reported back (cleared in every room when cooling was disabled on the I-167) ✓ |
 
+The I-167 broadcasts its own system registers in an `FF 17` frame (43
+bytes, about every 8 s). Bytes 15-16 hold its first register; bit `0800` is
+ECO mode (Away) ✓, in line with `forced_eco_mode` in `TS_REGMAP`. Bytes 31-35
+are a running clock.
+
 Not used by Uponor's software: 3D `0001` and `0200` (`0200` follows an
 active alarm), 3E `8000` (appears after a thermostat restart), 3F `0800`
 (while a thermostat starts up).
@@ -128,6 +133,10 @@ uhomed logs frames it does not fully decode (unknown frame types, name
 frames, the system frame and record) whenever their content changes, as
 `watch ...` lines in `/tmp/uhomed.log` (at most 30 per minute). This is how
 new commands are found: toggle something on the I-167 and look at the log.
+
+Experimental, read only: `POST /debug/probe-system` flags a pending system
+change in the acknowledgements for 60 s and logs what the I-167 asks for,
+without answering. A step towards switching ECO mode from HA.
 
 Client commands:
 

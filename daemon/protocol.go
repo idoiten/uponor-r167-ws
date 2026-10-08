@@ -116,6 +116,10 @@ type Room struct {
 type System struct {
 	OutdoorTemperature *float64 `json:"outdoor_temperature"`
 	AverageTemperature *float64 `json:"average_temperature"`
+	// EcoMode is Home/Away on the I-167 (Away = ECO for every room whose
+	// thermostat switch allows it): bit 11 (0x0800) of the I-167's first
+	// system register, broadcast in its FF 17 frame about every 8 s.
+	EcoMode *bool `json:"eco_mode"`
 }
 
 type Status struct {
@@ -166,6 +170,12 @@ type Controller struct {
 
 	// setpoint writes waiting to be sent or confirmed, by room address
 	writes map[byte]*pendingWrite
+	// last seen first system register of the I-167 (FF 17 frame)
+	tsReg0 *uint16
+	// probeUntil: while set and in the future, acknowledgements flag a
+	// pending system change (0x90) so the I-167's follow-up query can be
+	// logged. Nothing is answered.
+	probeUntil time.Time
 	// watch logging of undecoded frames
 	watched     map[string]string
 	watchWindow time.Time
@@ -236,6 +246,11 @@ func (c *Controller) Handle(p []byte) {
 		c.updateRoom(p[11], nil, ptr(tempC(p, 27)), ptr(tempC(p, 19)), ptr(tempC(p, 21)), bypassChanged, now)
 	case p[4] == 0x01 && p[5] == 0x17 && len(p) == 29 && p[6] == 0x16:
 		c.onData(p, now)
+	case p[4] == 0xFF && p[5] == 0x17 && len(p) == 43 && p[6] == 0x00:
+		// I-167 system registers. Bytes 31-35 are a running clock, left
+		// out of the watch log.
+		c.watch("I-167 system frame", append(append([]byte{}, p[6:31]...), p[36:]...), now)
+		c.onTouchScreen(p)
 	case p[4] == 0x01 && p[5] == 0x17 && len(p) == 37 && p[6] == 0x1E:
 		c.watch("system frame", p[6:], now)
 		c.updateSystem(ptr(tempC(p, 17)), ptr(tempC(p, 21)))
@@ -291,6 +306,10 @@ func (c *Controller) onNameFrame(p []byte, now time.Time) {
 	// A pending setpoint change takes priority; never combine it with a
 	// record request in the same acknowledgement.
 	wf := c.writeFlag(now)
+	if wf == 0 && now.Before(c.probeUntil) {
+		wf = 0x90
+		c.log("probe: flagged a system change (0x90)")
+	}
 	rq := byte(0)
 	if wf == 0 {
 		rq = c.nextRequest(now)
@@ -507,6 +526,22 @@ func outsideLimits(r *Room, sp float64, min, max *float64) bool {
 	return lo != nil && sp < *lo || hi != nil && sp > *hi
 }
 
+// tsEcoModeBit in the I-167's first system register (bytes 15-16 of its
+// FF 17 frame): forced ECO, "Away" on the I-167. Confirmed 2026-10-08.
+const tsEcoModeBit = 0x0800
+
+func (c *Controller) onTouchScreen(p []byte) {
+	reg0 := u16(p, 15)
+	c.tsReg0 = &reg0
+	known := c.system.EcoMode != nil
+	if setFlag(&c.system.EcoMode, reg0&tsEcoModeBit != 0) {
+		if known {
+			c.log("ECO mode (Home/Away on the I-167): %v", *c.system.EcoMode)
+		}
+		c.pub("system", c.system)
+	}
+}
+
 func (c *Controller) updateSystem(avg, outdoor *float64) {
 	changed := false
 	if avg != nil && *avg > 0 && *avg < 50 && !same(c.system.AverageTemperature, avg) {
@@ -719,4 +754,14 @@ func (c *Controller) setSettings(r *Room) bool {
 		c.log("settings register (35) for %s changed %s -> %s", room, old, v)
 	}
 	return true
+}
+
+// ProbeSystemWrite flags a pending system change in the next
+// acknowledgements for d, to see what the I-167 asks for. Its query is
+// logged by onWriteQuery and not answered, so nothing can change.
+func (c *Controller) ProbeSystemWrite(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.probeUntil = time.Now().Add(d)
+	c.log("probe: flagging a system change for %v", d)
 }

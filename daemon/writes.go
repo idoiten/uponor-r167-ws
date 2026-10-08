@@ -121,7 +121,10 @@ func (c *Controller) onWriteQuery(p []byte, now time.Time) {
 	w := c.writes[addr]
 	r := c.rooms[addr]
 	if w == nil || r == nil || len(r.block) != 12 || r.ecoOffset == nil {
-		c.log("write query for 0x%02X without a pending change, ignored", addr)
+		c.log("write query for 0x%02X without a pending change, ignored: % X", addr, p)
+		if now.Before(c.probeUntil) {
+			c.probeUntil = time.Time{} // got what the probe was for
+		}
 		return
 	}
 	frame := []byte{0x14, 0xFF, 0x3C, 0x1A, 0x1F, 0x85, 0x01, 0x00, addr, 0x00, 0x08}

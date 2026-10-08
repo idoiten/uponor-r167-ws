@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.10.0] - 2026-10-08
+
+### Added
+- **ECO mode** (Home/Away on the I-167) for the whole system, read from the
+  I-167's own system frame (`FF 17`, bit `0x0800` of its first register;
+  confirmed by toggling Away/Home). Shown within about 15 s: in HA as the
+  switch **ECO mode** (*ECO-läge*) on the Uponor R-167 device – switching
+  it from HA is not supported yet – and as an "ECO mode" badge on the web
+  page. uhomed logs when it changes.
+- The thermostats' comfort/eco preset and the web page's ECO badge now
+  follow ECO mode and the thermostat switch directly (eco = ECO mode on and
+  switch on Comfort/ECO), instead of waiting minutes for the room's own
+  status to refresh.
+- Experimental, read only: `POST /debug/probe-system` flags a pending
+  system change for 60 s and logs what the I-167 asks for (nothing is
+  answered).
+
+### Changed
+- The I-167's system frame is logged on change without its running clock,
+  so the watch log is not flooded every 8 s.
+
 ## [0.9.0] - 2026-10-08
 
 ### Removed

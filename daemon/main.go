@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-const version = "0.9.0"
+const version = "0.10.0"
 
 //go:embed index.html
 var webFiles embed.FS
@@ -190,6 +190,17 @@ func main() {
 				c.out <- encode("error", map[string]any{"id": cmd.ID, "message": "unsupported command: " + cmd.Type})
 			}
 		})
+	})
+	// Experimental, read only: flag a pending system change for 60 s and log
+	// what the I-167 asks for (nothing is answered).
+	//   curl -X POST http://<r167>:8765/debug/probe-system
+	mux.HandleFunc("/debug/probe-system", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "use POST", http.StatusMethodNotAllowed)
+			return
+		}
+		ctrl.ProbeSystemWrite(60 * time.Second)
+		fmt.Fprintln(w, "probing for 60 s; see /tmp/uhomed.log")
 	})
 	mux.HandleFunc("/state", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

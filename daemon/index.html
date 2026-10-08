@@ -58,7 +58,7 @@
 <main>
   <header>
     <h1>Uponor R-167</h1>
-    <div class="status"><span class="dot" id="dot"></span><span id="status">Connecting…</span></div>
+    <div class="status"><span class="badge eco on" id="ecomode" style="display:none" title="Away on the I-167: rooms whose thermostat switch allows it run ECO">ECO mode</span><span class="dot" id="dot"></span><span id="status">Connecting…</span></div>
   </header>
   <section class="system">
     <div class="tile"><div class="label">Outdoor</div><div class="value" id="outdoor">–</div></div>
@@ -70,7 +70,7 @@
 <script>
 const rooms = new Map();     // id -> room from uhomed
 const drafts = new Map();    // id -> {value, timer, sending}
-let status = null, device = {}, connected = false, ws = null, nextId = 1;
+let status = null, device = {}, system = {}, connected = false, ws = null, nextId = 1;
 const pending = new Map();   // command id -> room id
 const SEND_DELAY = 1500;     // ms after the last click before sending
 const ALARMS = [
@@ -172,7 +172,7 @@ function renderRoom(r, flash) {
   if (!el) {
     el = document.createElement("div");
     el.className = "room"; el.id = "room-" + r.id;
-    el.innerHTML = '<h2><span class="name"></span><span class="badges"><span class="badge eco" title="The room is running ECO (Away on the I-167)">ECO</span> <span class="badge bypass">Bypass</span> <span class="badge state"></span></span></h2>' +
+    el.innerHTML = '<h2><span class="name"></span><span class="badges"><span class="badge eco" title="The room is running ECO (ECO mode on and the thermostat switch on Comfort/ECO)">ECO</span> <span class="badge bypass">Bypass</span> <span class="badge state"></span></span></h2>' +
       '<div class="temp"></div>' +
       '<div class="sp"><span class="label">Setpoint</span><button class="dec" aria-label="Lower">−</button>' +
       '<span class="spv"></span><button class="inc" aria-label="Raise">+</button></div>' +
@@ -186,7 +186,7 @@ function renderRoom(r, flash) {
   const shown = d ? d.value : r.setpoint;
   el.querySelector(".name").textContent = r.name;
   el.querySelector(".bypass").style.display = r.bypass ? "" : "none";
-  el.querySelector(".eco").style.display = r.eco_active ? "" : "none";
+  el.querySelector(".eco").style.display = roomEco(r) ? "" : "none";
   for (const a of ALARMS) {
     const v = r[a.key], span = el.querySelector("." + a.key);
     span.querySelector("i").className = v == null ? "" : (v ? "bad" : "ok");
@@ -213,8 +213,19 @@ function sortRooms() {
 }
 
 function renderSystem(s) {
+  const modeChanged = system.eco_mode !== s.eco_mode;
+  system = s;
   document.getElementById("outdoor").textContent = fmt(s.outdoor_temperature);
   document.getElementById("average").textContent = fmt(s.average_temperature);
+  document.getElementById("ecomode").style.display = s.eco_mode ? "" : "none";
+  if (modeChanged) rooms.forEach(r => renderRoom(r, false));
+}
+
+// Same rule as the system: ECO mode on and the thermostat switch allows
+// it. Falls back to the room's own (slower) ECO status.
+function roomEco(r) {
+  if (system.eco_mode != null && r.eco_allowed != null) return system.eco_mode && r.eco_allowed;
+  return !!r.eco_active;
 }
 
 function connect() {

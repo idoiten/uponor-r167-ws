@@ -48,6 +48,11 @@
       "technical_alarm": {
         "name": "Tekniskt larm"
       }
+    },
+    "switch": {
+      "eco_mode": {
+        "name": "ECO-läge"
+      }
     }
   }
 }
