@@ -117,14 +117,16 @@ function setMsg(id, text, cls) {
 function step(id, delta) {
   const r = rooms.get(id);
   if (!r || r.setpoint == null) return;
-  const d = drafts.get(id) || { value: r.setpoint };
+  const off = ecoOffset(r);
+  const d = drafts.get(id) || { value: r.setpoint - off };
   if (d.sending) return;
   let v = Math.round((d.value + delta) * 2) / 2;
-  if (r.min != null) v = Math.max(r.min, v);
-  if (r.max != null) v = Math.min(r.max, v);
+  if (r.min != null) v = Math.max(r.min - off, v);
+  if (r.max != null) v = Math.min(r.max - off, v);
   d.value = v;
+  d.offset = off;
   clearTimeout(d.timer);
-  if (v === r.setpoint) {
+  if (v === r.setpoint - off) {
     drafts.delete(id);
     setMsg(id, "");
   } else {
@@ -147,7 +149,7 @@ function send(id) {
   d.sending = true;
   const cmd = nextId++;
   pending.set(cmd, id);
-  ws.send(JSON.stringify({ type: "set_setpoint", id: cmd, room: id, value: d.value }));
+  ws.send(JSON.stringify({ type: "set_setpoint", id: cmd, room: id, value: Math.round((d.value + (d.offset || 0)) * 10) / 10 }));
   setMsg(id, "Sending… waiting for the controller to confirm");
   renderRoom(rooms.get(id), false);
 }
@@ -183,7 +185,8 @@ function renderRoom(r, flash) {
     document.getElementById("rooms").appendChild(el);
   }
   const d = drafts.get(r.id);
-  const shown = d ? d.value : r.setpoint;
+  const off = ecoOffset(r);
+  const shown = d ? d.value : (r.setpoint == null ? null : r.setpoint - off);
   el.querySelector(".name").textContent = r.name;
   el.querySelector(".bypass").style.display = r.bypass ? "" : "none";
   el.querySelector(".eco").style.display = roomEco(r) ? "" : "none";
@@ -200,8 +203,11 @@ function renderRoom(r, flash) {
   spv.textContent = fmt(shown);
   spv.className = "spv" + (d ? " draft" : "");
   const busy = !!(d && d.sending) || r.setpoint == null;
-  el.querySelector(".dec").disabled = busy || (r.min != null && shown <= r.min);
-  el.querySelector(".inc").disabled = busy || (r.max != null && shown >= r.max);
+  el.querySelector(".dec").disabled = busy || (r.min != null && shown <= r.min - off);
+  el.querySelector(".inc").disabled = busy || (r.max != null && shown >= r.max - off);
+  const lbl = el.querySelector(".sp .label");
+  lbl.textContent = off ? "Setpoint (ECO)" : "Setpoint";
+  lbl.title = off ? `Comfort ${fmt(r.setpoint)} − ECO offset ${fmt(off)}` : "";
   el.querySelector(".meta").textContent = metaText(r);
   if (flash) { el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
 }
@@ -226,6 +232,12 @@ function renderSystem(s) {
 function roomEco(r) {
   if (system.eco_mode != null && r.eco_allowed != null) return system.eco_mode && r.eco_allowed;
   return !!r.eco_active;
+}
+
+// While a room runs ECO its setpoint is lowered by its ECO offset; the
+// controller's setpoint is the comfort one.
+function ecoOffset(r) {
+  return roomEco(r) && r.eco_offset ? r.eco_offset : 0;
 }
 
 function connect() {

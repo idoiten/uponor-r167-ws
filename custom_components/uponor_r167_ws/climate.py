@@ -50,17 +50,29 @@ class UponorWsClimate(UponorWsRoomEntity, ClimateEntity):
     def current_temperature(self) -> float | None:
         return self.room["temperature"] if self.room else None
 
+    def _eco_offset(self) -> float:
+        """How much the room's setpoint is lowered right now (0 on comfort).
+
+        The controller's setpoint is the comfort setpoint; while the room
+        runs ECO the I-167 shows (and the room uses) setpoint − ECO offset,
+        so that is what is shown and set here too.
+        """
+        if self.preset_mode != PRESET_ECO:
+            return 0.0
+        return (self.room or {}).get("eco_offset") or 0.0
+
     @property
     def target_temperature(self) -> float | None:
-        return self.room["setpoint"] if self.room else None
+        sp = (self.room or {}).get("setpoint")
+        return None if sp is None else round(sp - self._eco_offset(), 1)
 
     @property
     def min_temp(self) -> float:
-        return (self.room or {}).get("min") or 5.0
+        return ((self.room or {}).get("min") or 5.0) - self._eco_offset()
 
     @property
     def max_temp(self) -> float:
-        return (self.room or {}).get("max") or 35.0
+        return ((self.room or {}).get("max") or 35.0) - self._eco_offset()
 
     @property
     def preset_mode(self) -> str | None:
@@ -94,6 +106,8 @@ class UponorWsClimate(UponorWsRoomEntity, ClimateEntity):
         regs = room.get("registers") or {}
         attrs = {f"register_{k}": v for k, v in regs.items()}
         attrs["eco_allowed"] = room.get("eco_allowed")
+        attrs["comfort_temperature"] = room.get("setpoint")
+        attrs["eco_offset"] = room.get("eco_offset")
         return attrs
 
     @property
@@ -108,7 +122,8 @@ class UponorWsClimate(UponorWsRoomEntity, ClimateEntity):
         if value is None:
             return
         try:
-            await self._client.set_setpoint(self._room_id, float(value))
+            # in ECO the shown value is comfort − offset; write the comfort setpoint
+            await self._client.set_setpoint(self._room_id, round(float(value) + self._eco_offset(), 1))
         except UponorWsError as err:
             raise HomeAssistantError(f"Could not change the setpoint: {err}") from err
 

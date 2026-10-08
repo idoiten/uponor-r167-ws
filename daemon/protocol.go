@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/hex"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"sync"
@@ -93,6 +94,11 @@ type Room struct {
 	// goes to ECO.
 	EcoActive  *bool `json:"eco_active"`
 	EcoAllowed *bool `json:"eco_allowed"`
+	// EcoOffset is how much lower the room's setpoint is while it runs
+	// ECO, in °C (register 3C, "ECO justering" on the I-167). Setpoint is
+	// always the comfort setpoint; the I-167 shows Setpoint − EcoOffset
+	// while the room runs ECO.
+	EcoOffset *float64 `json:"eco_offset"`
 	// Raw controller registers, hex: 3D status (heating demand, limits,
 	// ECO), 3E alarms (technical, tamper, RF, battery, RH sensor),
 	// 3F thermostat type / regulation mode, plus 35, the room settings
@@ -423,6 +429,9 @@ func (c *Controller) onRecord(p []byte, now time.Time) {
 	}
 	off := u16(p, 25)
 	r.ecoOffset = &off
+	if eo := ptr(math.Round(float64(off)/1.8) / 10); !same(r.EcoOffset, eo) {
+		r.EcoOffset, changed = eo, true
+	}
 	if c.setRaw(r, "3c", off) {
 		changed = true
 	}

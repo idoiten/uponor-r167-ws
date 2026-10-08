@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.11.1] - 2026-10-08
+
+### Fixed
+- While a room runs ECO, Home Assistant and the web page showed the comfort
+  setpoint (e.g. 25 °C) instead of the lowered one the I-167 shows and the
+  room uses (25 − ECO offset 2 = 23 °C). The thermostat card now shows
+  setpoint − ECO offset in ECO, with the limits shifted the same way;
+  changing it there writes the matching comfort setpoint (23 → 24 writes 25).
+  The web page marks it "Setpoint (ECO)".
+
+### Added
+- Room field `eco_offset` (°C, register 3C) over the WebSocket, and the
+  attributes `comfort_temperature` and `eco_offset` on the thermostats.
+
 ## [0.11.0] - 2026-10-08
 
 ### Added

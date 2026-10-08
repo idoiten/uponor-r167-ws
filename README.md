@@ -91,7 +91,7 @@ Connect to `ws://<r167>:8765/ws`. The server sends JSON messages
 
 A room: `{"id": "4a", "channel": 18, "name": "K-E-V", "temperature": 22.2,
 "setpoint": 25.0, "min": 15.0, "max": 25.0, "bitmask": "0406", "heating": true, "bypass": false,
-"radio_alarm": false, "battery_alarm": false, "technical_alarm": false,
+"eco_offset": 2.0, "radio_alarm": false, "battery_alarm": false, "technical_alarm": false,
 "registers": {"3d": "0041", "3e": "0000", "3f": "0400"}, "last_update": "..."}`.
 `id` is the room's controller address and is stable. `radio_alarm` is true
 when the controller has lost contact with the thermostat (I-167: "Term. saknas",

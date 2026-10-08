@@ -533,6 +533,9 @@ func TestWriteKeepsEcoOffset(t *testing.T) {
 	rec := append([]byte{}, fr.records[0x4A]...)
 	rec[25], rec[26] = 0x00, 0x24 // ECO offset 2.0 °C, as set on the I-167 on 2026-10-08
 	c.Handle(rec)
+	if eo := c.rooms[0x4A].EcoOffset; eo == nil || *eo != 2.0 {
+		t.Fatalf("eco_offset = %v, want 2.0", eo)
+	}
 	c.nextSystem = time.Now().Add(time.Hour)
 	c.SetSetpoint("4a", 24.5, func(error) {})
 	c.Handle(mustHex("14 FF 3C 1A 1F 80 1D 00 00 00 00 11 00 00 00 00 4B 6C E4 64 76 E5 72 64 00 03 14 03 02 00 00 41 28 12 CE 00"))
