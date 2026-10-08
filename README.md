@@ -124,11 +124,10 @@ Not used by Uponor's software: 3D `0001` and `0200` (`0200` follows an
 active alarm), 3E `8000` (appears after a thermostat restart), 3F `0800`
 (while a thermostat starts up).
 
-Experimental: `POST /debug/eco?room=<id>&on=1|0` asks the I-167 to put a
-room in or out of ECO, by sending the room's current setpoint with the ECO
-bit (35 `0008`) changed in its settings block. It answers when the
-controller confirms or after the write timeout. Whether the I-167 honours it
-is not known yet.
+uhomed logs frames it does not fully decode (unknown frame types, name
+frames, the system frame and record) whenever their content changes, as
+`watch ...` lines in `/tmp/uhomed.log` (at most 30 per minute). This is how
+new commands are found: toggle something on the I-167 and look at the log.
 
 Client commands:
 

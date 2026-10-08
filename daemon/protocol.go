@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/hex"
 	"fmt"
 	"sort"
 	"strings"
@@ -165,6 +166,11 @@ type Controller struct {
 
 	// setpoint writes waiting to be sent or confirmed, by room address
 	writes map[byte]*pendingWrite
+	// watch logging of undecoded frames
+	watched     map[string]string
+	watchWindow time.Time
+	watchLines  int
+
 	// writes that timed out recently, so a late confirmation is still
 	// recognised as ours
 	lateWrites map[byte]lateWrite
@@ -210,6 +216,7 @@ func (c *Controller) Handle(p []byte) {
 
 	switch {
 	case p[4] == 0x1F && p[5] == 0x80 && len(p) == 36:
+		c.watch(fmt.Sprintf("name frame ch %02X", p[11]), p[6:16], now)
 		c.onNameFrame(p, now)
 	case p[4] == 0x1F && p[5] == 0x86 && len(p) == 49 && p[6] == 0x01:
 		c.onRecord(p, now)
@@ -230,7 +237,39 @@ func (c *Controller) Handle(p []byte) {
 	case p[4] == 0x01 && p[5] == 0x17 && len(p) == 29 && p[6] == 0x16:
 		c.onData(p, now)
 	case p[4] == 0x01 && p[5] == 0x17 && len(p) == 37 && p[6] == 0x1E:
+		c.watch("system frame", p[6:], now)
 		c.updateSystem(ptr(tempC(p, 17)), ptr(tempC(p, 21)))
+	default:
+		c.watch(fmt.Sprintf("unknown frame %02X %02X len %d [6]=%02X", p[4], p[5], len(p), p[6]), p, now)
+	}
+}
+
+// watch logs frames uhomed does not (fully) decode whenever their content
+// changes, so commands such as Home/Away on the I-167 can be found by
+// toggling them. Rate limited to watchBurst lines per minute.
+const watchBurst = 30
+
+func (c *Controller) watch(key string, data []byte, now time.Time) {
+	if c.watched == nil {
+		c.watched = map[string]string{}
+	}
+	h := hex.EncodeToString(data)
+	old, seen := c.watched[key]
+	if seen && old == h {
+		return
+	}
+	c.watched[key] = h
+	if now.Sub(c.watchWindow) > time.Minute {
+		c.watchWindow, c.watchLines = now, 0
+	}
+	if c.watchLines >= watchBurst {
+		return
+	}
+	c.watchLines++
+	if seen {
+		c.log("watch %s: %s (was %s)", key, h, old)
+	} else {
+		c.log("watch %s: %s", key, h)
 	}
 }
 
@@ -318,6 +357,7 @@ func (c *Controller) onRecord(p []byte, now time.Time) {
 	c.records++
 	addr := p[8]
 	if addr == systemRecordAddr {
+		c.watch("system record", p[6:], now)
 		if c.pendingCh == 0x10 {
 			c.pendingCh = 0
 		}

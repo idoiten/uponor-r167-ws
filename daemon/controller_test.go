@@ -505,47 +505,6 @@ func TestSettingsRegister(t *testing.T) {
 	}
 }
 
-func TestEcoWrite(t *testing.T) {
-	fr := &fakeRadio{records: loadRecords(t)}
-	var logs []string
-	logf := func(f string, a ...any) { logs = append(logs, fmt.Sprintf(f, a...)) }
-	c := NewController(fr, logf, func(string, any) {}, time.Hour)
-	c.names[0x12] = "K-E-V"
-	c.Handle(fr.records[0x4A])
-	c.nextSystem = time.Now().Add(time.Hour)
-	sp := *c.rooms[0x4A].Setpoint
-
-	var result error = errors.New("not called")
-	c.SetEco("4a", true, func(err error) { result = err })
-	c.Handle(mustHex("14 FF 3C 1A 1F 80 1D 00 00 00 00 11 00 00 00 00 4B 6C E4 64 76 E5 72 64 00 03 14 03 02 00 00 41 28 12 CE 00"))
-	if ack := fr.sent[len(fr.sent)-1]; ack[11] != 0x92 {
-		t.Fatalf("ack flag = %02X, want 92", ack[11])
-	}
-	c.Handle(mustHex("14 FF 3C 1A 1F 85 01 00 4A 00 08"))
-	got := fr.sent[len(fr.sent)-1]
-	raw := cToRaw(sp)
-	want := append(mustHex("14 FF 3C 1A 1F 85 01 00 4A 00 08 88 08 00 64 02 4E 03 02 02 A8 03 14"), byte(raw>>8), byte(raw), 0, 0, 0, 0, 0, 0)
-	if string(got) != string(want) {
-		t.Fatalf("ECO frame\n got % X\nwant % X", got, want)
-	}
-	// A header still without the ECO bit does not confirm ...
-	c.Handle(mustHex("14 FF 3C 1A 01 17 00 52 00 0B 00 4A 00 08 10 88 00 00 64 02 4E 03 02 02 A8 03 14 03 02 00 00"))
-	if result == nil {
-		t.Fatal("confirmed without the ECO bit")
-	}
-	// ... one with it does.
-	c.Handle(mustHex("14 FF 3C 1A 01 17 00 52 00 0B 00 4A 00 08 10 88 08 00 64 02 4E 03 02 02 A8 03 14 03 02 00 00"))
-	if result != nil {
-		t.Fatalf("ECO write not confirmed: %v", result)
-	}
-	if !hasLog(logs, "ECO on confirmed for 0x4A") {
-		t.Fatalf("missing confirmation log: %v", logs)
-	}
-	if got := c.rooms[0x4A].Registers["35"]; got != "8808" {
-		t.Fatalf("register 35 = %s", got)
-	}
-}
-
 func TestEcoStatus(t *testing.T) {
 	fr := &fakeRadio{records: loadRecords(t)}
 	c := NewController(fr, t.Logf, func(string, any) {}, time.Hour)
@@ -594,5 +553,24 @@ func TestWriteNeedsEcoOffset(t *testing.T) {
 	c.SetSetpoint("4a", 24.5, func(err error) { got = err })
 	if got == nil {
 		t.Fatal("write accepted before the ECO offset was known")
+	}
+}
+
+func TestWatchLogsChanges(t *testing.T) {
+	var logs []string
+	logf := func(f string, a ...any) { logs = append(logs, fmt.Sprintf(f, a...)) }
+	c := NewController(&fakeRadio{}, logf, func(string, any) {}, time.Hour)
+	now := time.Now()
+	c.watch("k", []byte{1, 2}, now)
+	c.watch("k", []byte{1, 2}, now) // unchanged: not logged
+	c.watch("k", []byte{1, 3}, now)
+	if len(logs) != 2 || logs[1] != "watch k: 0103 (was 0102)" {
+		t.Fatalf("logs = %v", logs)
+	}
+	for i := 0; i < 100; i++ {
+		c.watch("k", []byte{byte(i), 9}, now)
+	}
+	if len(logs) > watchBurst {
+		t.Fatalf("rate limit not applied: %d lines", len(logs))
 	}
 }

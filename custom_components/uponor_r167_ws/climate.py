@@ -70,11 +70,12 @@ class UponorWsClimate(UponorWsRoomEntity, ClimateEntity):
         return PRESET_ECO if eco else PRESET_COMFORT
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
-        # Read-only for now: ECO follows Home/Away on the I-167 and the
-        # Comfort/ECO switch on the thermostat. Writing it is being tested.
+        # Display only: a room runs ECO when the whole system is in ECO mode
+        # (Home/Away on the I-167) and the thermostat's switch allows it.
+        # The I-167 does not accept ECO per room.
         raise HomeAssistantError(
-            "ECO is set with Home/Away on the I-167 (and the switch on the thermostat); "
-            "setting it from Home Assistant is not supported yet"
+            "The mode follows ECO mode for the whole system (Home/Away on the I-167) "
+            "and cannot be set per room"
         )
 
     @property

@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.9.0] - 2026-10-08
+
+### Removed
+- The experimental `POST /debug/eco` from 0.8.0. Tested on a live system:
+  the I-167 does not accept the ECO bit per room. ECO is a whole-system
+  setting (Home/Away on the I-167).
+
+### Changed
+- The thermostats' comfort/eco preset is display only; selecting it in HA
+  explains that it follows ECO mode for the whole system.
+
+### Added
+- Logging of frames uhomed does not fully decode – unknown frame types,
+  name frames, the system frame and the system record – whenever their
+  content changes (`watch ...` lines, at most 30 per minute). Used to find
+  the I-167's Home/Away (ECO mode) command so it can be offered as an
+  "ECO mode" switch in HA.
+
 ## [0.8.1] - 2026-10-08
 
 ### Fixed
