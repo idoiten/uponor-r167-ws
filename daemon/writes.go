@@ -47,6 +47,24 @@ type pendingWrite struct {
 	sentAt    time.Time
 	attempts  int
 	done      func(error)
+	// eco, when set, makes this an ECO write: the current setpoint is sent
+	// with the ECO bit (register 35 0x0008) set or cleared in the room's
+	// settings block. Experimental, see SetEco.
+	eco *bool
+}
+
+// ecoBit is "ECO commanded for this room" in register 35 (low byte of the
+// first settings word), set by the I-167 when the system goes to Away.
+const ecoBit = 0x08
+
+func (w *pendingWrite) what() string {
+	if w.eco != nil {
+		if *w.eco {
+			return "ECO on"
+		}
+		return "ECO off"
+	}
+	return fmt.Sprintf("setpoint %.1f", w.value)
 }
 
 // cToRaw converts °C to the system's 0.1 °F encoding.
@@ -89,16 +107,50 @@ func (c *Controller) SetSetpoint(id string, value float64, done func(error)) {
 	c.log("setpoint %.1f queued for %s (0x%02X)", value, r.Name, addr)
 }
 
+// SetEco asks the I-167 to put a room in (or take it out of) ECO by
+// writing its current setpoint with the ECO bit of register 35 changed –
+// the same write the I-167 accepts for setpoint changes. Experimental:
+// whether the I-167 honours the bit is what this is for finding out.
+// done is called like for SetSetpoint; success means the controller now
+// reports the requested ECO bit for the room.
+func (c *Controller) SetEco(id string, on bool, done func(error)) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	a, err := strconv.ParseUint(id, 16, 8)
+	if err != nil {
+		done(fmt.Errorf("invalid room id %q", id))
+		return
+	}
+	addr := byte(a)
+	r := c.rooms[addr]
+	if r == nil {
+		done(fmt.Errorf("unknown room %q", id))
+		return
+	}
+	if len(r.block) != 12 || r.Setpoint == nil {
+		done(errors.New("room settings not received yet, try again shortly"))
+		return
+	}
+	if old := c.writes[addr]; old != nil {
+		old.done(errors.New("superseded by a newer write"))
+	}
+	c.writes[addr] = &pendingWrite{addr: addr, ch: byte(r.Channel), raw: cToRaw(*r.Setpoint), value: *r.Setpoint,
+		created: time.Now(), done: done, eco: &on}
+	c.log("ECO %v queued for %s (0x%02X)", map[bool]string{true: "on", false: "off"}[on], r.Name, addr)
+}
+
 // writeFlag returns the value for byte [11] of the next acknowledgement:
 // 0x80|channel when a write is waiting to be picked up, otherwise 0.
 func (c *Controller) writeFlag(now time.Time) byte {
 	var next *pendingWrite
 	for addr, w := range c.writes {
 		if now.Sub(w.created) > writeTimeout {
-			c.log("setpoint write for 0x%02X timed out", addr)
-			w.done(errors.New("the heating system did not confirm the new setpoint"))
+			c.log("%s write for 0x%02X timed out", w.what(), addr)
+			w.done(errors.New("the heating system did not confirm the change"))
 			delete(c.writes, addr)
-			c.lateWrites[addr] = lateWrite{value: w.value, until: now.Add(writeLateWindow)}
+			if w.eco == nil {
+				c.lateWrites[addr] = lateWrite{value: w.value, until: now.Add(writeLateWindow)}
+			}
 			continue
 		}
 		if !w.sentAt.IsZero() && now.Sub(w.sentAt) < writeResendAfter {
@@ -125,15 +177,23 @@ func (c *Controller) onWriteQuery(p []byte, now time.Time) {
 		return
 	}
 	frame := []byte{0x14, 0xFF, 0x3C, 0x1A, 0x1F, 0x85, 0x01, 0x00, addr, 0x00, 0x08}
-	frame = append(frame, r.block...)
+	block := append([]byte{}, r.block...)
+	if w.eco != nil {
+		if *w.eco {
+			block[1] |= ecoBit
+		} else {
+			block[1] &^= ecoBit
+		}
+	}
+	frame = append(frame, block...)
 	frame = append(frame, byte(w.raw>>8), byte(w.raw), 0, 0, 0, 0, 0, 0)
 	if err := c.radio.Send(frame); err != nil {
-		c.log("TX setpoint failed: %v", err)
+		c.log("TX %s failed: %v", w.what(), err)
 		return
 	}
 	w.sentAt = now
 	w.attempts++
-	c.log("sent setpoint %.1f to %s (0x%02X), attempt %d", w.value, r.Name, addr, w.attempts)
+	c.log("sent %s to %s (0x%02X), attempt %d", w.what(), r.Name, addr, w.attempts)
 }
 
 // confirmWrite completes a pending write when the system reports the
@@ -143,8 +203,14 @@ func (c *Controller) confirmWrite(addr byte, raw uint16) {
 	if w == nil || w.sentAt.IsZero() || raw != w.raw {
 		return
 	}
+	if w.eco != nil {
+		r := c.rooms[addr]
+		if r == nil || len(r.block) < 2 || (r.block[1]&ecoBit != 0) != *w.eco {
+			return
+		}
+	}
 	delete(c.lateWrites, addr)
-	c.log("setpoint %.1f confirmed for 0x%02X", w.value, addr)
+	c.log("%s confirmed for 0x%02X", w.what(), addr)
 	if r := c.rooms[addr]; r != nil {
 		r.ownSetpoint = ptr(w.value)
 	}

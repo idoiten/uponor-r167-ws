@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-const version = "0.7.1"
+const version = "0.8.0"
 
 //go:embed index.html
 var webFiles embed.FS
@@ -190,6 +190,23 @@ func main() {
 				c.out <- encode("error", map[string]any{"id": cmd.ID, "message": "unsupported command: " + cmd.Type})
 			}
 		})
+	})
+	// Experimental: ask the I-167 to put a room in or out of ECO.
+	//   curl -X POST 'http://<r167>:8765/debug/eco?room=4a&on=1'
+	// Waits for the controller to confirm (up to the write timeout).
+	mux.HandleFunc("/debug/eco", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "use POST", http.StatusMethodNotAllowed)
+			return
+		}
+		on := r.URL.Query().Get("on") == "1"
+		res := make(chan error, 1)
+		ctrl.SetEco(r.URL.Query().Get("room"), on, func(err error) { res <- err })
+		if err := <-res; err != nil {
+			http.Error(w, "failed: "+err.Error()+"\n", http.StatusBadGateway)
+			return
+		}
+		fmt.Fprintf(w, "confirmed: ECO %v for room %s\n", on, r.URL.Query().Get("room"))
 	})
 	mux.HandleFunc("/state", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

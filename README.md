@@ -104,7 +104,8 @@ Register bits, from the register map in Uponor's own gateway software
 | 35 | `0001` | bypass ✓ |
 | 35 | `0800` | remote control of the thermostat allowed |
 | 35 | `8000` | cooling allowed ✓ |
-| 3D | `0008` | ECO profile active |
+| 35 | `0008` | ECO commanded for the room (set by the I-167 on Away) ✓ |
+| 3D | `0008` | room is running ECO ✓ |
 | 3D | `0010` | home/away (forced ECO) |
 | 3D | `0040` | room in demand (heating) ✓ |
 | 3D | `0080` | RH limit reached |
@@ -114,12 +115,19 @@ Register bits, from the register map in Uponor's own gateway software
 | 3E | `0020` | radio alarm ✓ |
 | 3E | `0040` | battery alarm |
 | 3F | `0007` | thermostat type (0 analog, 1 public, 2 digital, 3 digital programmable) |
+| 3F | `0008` | thermostat switch on Comfort/ECO (ECO allowed) ✓ |
 | 3F | `0300` | regulation mode |
 | 3F | `0400` | cooling allowed, as reported back (cleared in every room when cooling was disabled on the I-167) ✓ |
 
 Not used by Uponor's software: 3D `0001` and `0200` (`0200` follows an
 active alarm), 3E `8000` (appears after a thermostat restart), 3F `0800`
 (while a thermostat starts up).
+
+Experimental: `POST /debug/eco?room=<id>&on=1|0` asks the I-167 to put a
+room in or out of ECO, by sending the room's current setpoint with the ECO
+bit (35 `0008`) changed in its settings block. It answers when the
+controller confirms or after the write timeout. Whether the I-167 honours it
+is not known yet.
 
 Client commands:
 

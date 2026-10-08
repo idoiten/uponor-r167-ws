@@ -172,7 +172,7 @@ function renderRoom(r, flash) {
   if (!el) {
     el = document.createElement("div");
     el.className = "room"; el.id = "room-" + r.id;
-    el.innerHTML = '<h2><span class="name"></span><span class="badges"><span class="badge bypass">Bypass</span> <span class="badge state"></span></span></h2>' +
+    el.innerHTML = '<h2><span class="name"></span><span class="badges"><span class="badge eco" title="The room is running ECO (Away on the I-167)">ECO</span> <span class="badge bypass">Bypass</span> <span class="badge state"></span></span></h2>' +
       '<div class="temp"></div>' +
       '<div class="sp"><span class="label">Setpoint</span><button class="dec" aria-label="Lower">−</button>' +
       '<span class="spv"></span><button class="inc" aria-label="Raise">+</button></div>' +
@@ -186,6 +186,7 @@ function renderRoom(r, flash) {
   const shown = d ? d.value : r.setpoint;
   el.querySelector(".name").textContent = r.name;
   el.querySelector(".bypass").style.display = r.bypass ? "" : "none";
+  el.querySelector(".eco").style.display = r.eco_active ? "" : "none";
   for (const a of ALARMS) {
     const v = r[a.key], span = el.querySelector("." + a.key);
     span.querySelector("i").className = v == null ? "" : (v ? "bad" : "ok");

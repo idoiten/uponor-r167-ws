@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.8.0] - 2026-10-08
+
+### Added
+- **ECO status per room.** 3D `0x0008` is set while the room runs ECO
+  (the system is on Away on the I-167 and the thermostat's switch is on
+  Comfort/ECO); 3F `0x0008` is the switch position (ECO allowed); 35
+  `0x0008` is the I-167's ECO command for the room. Rooms carry
+  `eco_active` and `eco_allowed`. In HA the thermostats get a preset mode,
+  **comfort** or **eco**, read-only for now, and an `eco_allowed`
+  attribute. The web page shows an "ECO" badge.
+- Register 3C (believed to be the ECO offset, "ECO justering") is exposed
+  raw as `register_3c` until its encoding is confirmed.
+- Experimental `POST /debug/eco?room=<id>&on=1|0`: asks the I-167 to put a
+  room in or out of ECO by sending its current setpoint with the ECO bit
+  changed in the settings block – the same write the I-167 accepts for
+  setpoints. For testing whether ECO can be controlled from HA.
+
 ## [0.7.1] - 2026-10-08
 
 ### Changed

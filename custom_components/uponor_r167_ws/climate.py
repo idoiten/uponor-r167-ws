@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from homeassistant.components.climate import (
     ATTR_TEMPERATURE,
+    PRESET_COMFORT,
+    PRESET_ECO,
     ClimateEntity,
     ClimateEntityFeature,
     HVACAction,
@@ -37,7 +39,8 @@ class UponorWsClimate(UponorWsRoomEntity, ClimateEntity):
     _attr_target_temperature_step = 0.5
     _attr_hvac_modes = [HVACMode.HEAT]
     _attr_hvac_mode = HVACMode.HEAT
-    _attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
+    _attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.PRESET_MODE
+    _attr_preset_modes = [PRESET_COMFORT, PRESET_ECO]
 
     def __init__(self, entry, client, room_id, gateway_device_id) -> None:
         super().__init__(entry, client, room_id, gateway_device_id)
@@ -60,9 +63,27 @@ class UponorWsClimate(UponorWsRoomEntity, ClimateEntity):
         return (self.room or {}).get("max") or 35.0
 
     @property
+    def preset_mode(self) -> str | None:
+        eco = (self.room or {}).get("eco_active")
+        if eco is None:
+            return None
+        return PRESET_ECO if eco else PRESET_COMFORT
+
+    async def async_set_preset_mode(self, preset_mode: str) -> None:
+        # Read-only for now: ECO follows Home/Away on the I-167 and the
+        # Comfort/ECO switch on the thermostat. Writing it is being tested.
+        raise HomeAssistantError(
+            "ECO is set with Home/Away on the I-167 (and the switch on the thermostat); "
+            "setting it from Home Assistant is not supported yet"
+        )
+
+    @property
     def extra_state_attributes(self):
-        regs = (self.room or {}).get("registers") or {}
-        return {f"register_{k}": v for k, v in regs.items()}
+        room = self.room or {}
+        regs = room.get("registers") or {}
+        attrs = {f"register_{k}": v for k, v in regs.items()}
+        attrs["eco_allowed"] = room.get("eco_allowed")
+        return attrs
 
     @property
     def hvac_action(self) -> HVACAction | None:

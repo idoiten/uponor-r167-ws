@@ -86,6 +86,12 @@ type Room struct {
 	// positions from the register map in Uponor's own gateway software.
 	BatteryAlarm   *bool `json:"battery_alarm"`
 	TechnicalAlarm *bool `json:"technical_alarm"`
+	// EcoActive: the room is running ECO (3D 0x0008), e.g. the system is
+	// set to Away on the I-167. EcoAllowed: the switch on the back of the
+	// thermostat is on Comfort/ECO (3F 0x0008); on Comfort the room never
+	// goes to ECO.
+	EcoActive  *bool `json:"eco_active"`
+	EcoAllowed *bool `json:"eco_allowed"`
 	// Raw controller registers, hex: 3D status (heating demand, limits,
 	// ECO), 3E alarms (technical, tamper, RF, battery, RH sensor),
 	// 3F thermostat type / regulation mode, plus 35, the room settings
@@ -354,6 +360,9 @@ func (c *Controller) onRecord(p []byte, now time.Time) {
 	if c.setRegisters(r, u16(p, 27), u16(p, 29), u16(p, 31)) {
 		changed = true
 	}
+	if c.setRaw(r, "3c", u16(p, 25)) {
+		changed = true
+	}
 	if setFlag(&r.Bypass, p[12]&0x01 != 0) {
 		changed = true
 	}
@@ -545,6 +554,13 @@ func (c *Controller) publishRoom(r *Room, changed bool, now time.Time) {
 
 var registerNames = []string{"3d", "3e", "3f"}
 
+// ECO: 3D 0x0008 the room is running ECO, 3F 0x0008 the thermostat's
+// Comfort/ECO switch allows it (both confirmed 2026-10-08).
+const (
+	ecoActiveMask  = 0x0008
+	ecoAllowedMask = 0x0008
+)
+
 // Alarm bits in register 3E (from VT_REGMAP in Uponor's platform).
 const (
 	technicalAlarmMask = 0x0003
@@ -579,6 +595,16 @@ func (c *Controller) setRegisters(r *Room, vals ...uint16) bool {
 			c.log("alarm register (3e) for %s is %s at start", room, v)
 		}
 	}
+	ecoKnown := r.EcoActive != nil
+	if setFlag(&r.EcoActive, vals[0]&ecoActiveMask != 0) {
+		if ecoKnown {
+			c.log("ECO for %s: %v", room, *r.EcoActive)
+		}
+		changed = true
+	}
+	if setFlag(&r.EcoAllowed, vals[2]&ecoAllowedMask != 0) {
+		changed = true
+	}
 	for _, a := range []struct {
 		dst  **bool
 		mask uint16
@@ -599,6 +625,29 @@ func (c *Controller) setRegisters(r *Room, vals ...uint16) bool {
 		}
 	}
 	return changed
+}
+
+// setRaw stores one raw register (hex) and logs changes. 3C is believed to
+// be the ECO offset ("ECO justering" on the I-167); exposed raw until the
+// encoding is confirmed.
+func (c *Controller) setRaw(r *Room, name string, val uint16) bool {
+	if r.Registers == nil {
+		r.Registers = map[string]string{}
+	}
+	v := fmt.Sprintf("%04x", val)
+	old, known := r.Registers[name]
+	if known && old == v {
+		return false
+	}
+	r.Registers[name] = v
+	if known {
+		room := r.Name
+		if room == "" {
+			room = "room " + r.ID
+		}
+		c.log("register %s for %s changed %s -> %s", name, room, old, v)
+	}
+	return true
 }
 
 // setSettings stores register 35, the room settings echoed in the
