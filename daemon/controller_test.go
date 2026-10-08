@@ -565,3 +565,34 @@ func TestEcoStatus(t *testing.T) {
 		t.Fatal("register 3c missing")
 	}
 }
+
+func TestWriteKeepsEcoOffset(t *testing.T) {
+	fr := &fakeRadio{records: loadRecords(t)}
+	c := NewController(fr, t.Logf, func(string, any) {}, time.Hour)
+	c.names[0x12] = "K-E-V"
+	rec := append([]byte{}, fr.records[0x4A]...)
+	rec[25], rec[26] = 0x00, 0x24 // ECO offset 2.0 °C, as set on the I-167 on 2026-10-08
+	c.Handle(rec)
+	c.nextSystem = time.Now().Add(time.Hour)
+	c.SetSetpoint("4a", 24.5, func(error) {})
+	c.Handle(mustHex("14 FF 3C 1A 1F 80 1D 00 00 00 00 11 00 00 00 00 4B 6C E4 64 76 E5 72 64 00 03 14 03 02 00 00 41 28 12 CE 00"))
+	c.Handle(mustHex("14 FF 3C 1A 1F 85 01 00 4A 00 08"))
+	got := fr.sent[len(fr.sent)-1]
+	want := mustHex("14 FF 3C 1A 1F 85 01 00 4A 00 08 88 00 00 64 02 4E 03 02 02 A8 03 14 02 F9 00 24 00 00 00 00")
+	if string(got) != string(want) {
+		t.Fatalf("setpoint frame\n got % X\nwant % X", got, want)
+	}
+}
+
+func TestWriteNeedsEcoOffset(t *testing.T) {
+	fr := &fakeRadio{records: loadRecords(t)}
+	c := NewController(fr, t.Logf, func(string, any) {}, time.Hour)
+	c.names[0x12] = "K-E-V"
+	c.Handle(fr.records[0x4A])
+	c.rooms[0x4A].ecoOffset = nil // e.g. only a header seen so far
+	var got error
+	c.SetSetpoint("4a", 24.5, func(err error) { got = err })
+	if got == nil {
+		t.Fatal("write accepted before the ECO offset was known")
+	}
+}

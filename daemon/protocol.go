@@ -103,6 +103,10 @@ type Room struct {
 	addr    byte
 	bitmask uint16
 	block   []byte // 12 settings bytes echoed back when writing a setpoint
+	// ecoOffset is register 3C (ECO offset, 0.1 °F) from the room's record.
+	// It follows the setpoint in a write, so it must be known first or the
+	// write would reset the room's ECO offset.
+	ecoOffset *uint16
 	// setpoint we just wrote ourselves, so its echo is not logged as external
 	ownSetpoint *float64
 	published   time.Time
@@ -360,7 +364,9 @@ func (c *Controller) onRecord(p []byte, now time.Time) {
 	if c.setRegisters(r, u16(p, 27), u16(p, 29), u16(p, 31)) {
 		changed = true
 	}
-	if c.setRaw(r, "3c", u16(p, 25)) {
+	off := u16(p, 25)
+	r.ecoOffset = &off
+	if c.setRaw(r, "3c", off) {
 		changed = true
 	}
 	if setFlag(&r.Bypass, p[12]&0x01 != 0) {

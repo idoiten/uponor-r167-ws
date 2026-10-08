@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.1] - 2026-10-08
+
+### Fixed
+- **Setpoint writes reset the room's ECO offset.** The write sent to the
+  I-167 carries, after the setpoint, the room's ECO offset (register 3C),
+  which uhomed sent as zero (as in the original capture, where the offset
+  was zero). A setpoint change from HA or the web page therefore set
+  "ECO justering" to 0 for that room. uhomed now sends the offset the room
+  has, and refuses to write before it has read it (shortly after a
+  restart: "room settings not received yet").
+- Register 3C confirmed as the ECO offset in 0.1 °F (`0024` = 2.0 °C).
+
 ## [0.8.0] - 2026-10-08
 
 ### Added

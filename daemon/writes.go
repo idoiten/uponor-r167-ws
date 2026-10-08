@@ -16,8 +16,8 @@ import (
 //  2. The I-167 asks for it with a short frame naming the room address:
 //       14 FF 3C 1A 1F 85 01 00 4A 00 08
 //  3. The R-167 answers with the room's 12 settings bytes (as seen in the
-//     controller's room header) followed by the new setpoint and six
-//     zero bytes:
+//     controller's room header) followed by the new setpoint, the room's
+//     ECO offset (register 3C; zero in this capture) and four zero bytes:
 //       14 FF 3C 1A 1F 85 01 00 4A 00 08 88 00 00 64 02 4E 03 02 02 A8 03 14 02 F9 00 00 00 00 00 00
 //  4. The controller broadcasts the room header with the new setpoint,
 //     which is how the write is confirmed.
@@ -90,7 +90,7 @@ func (c *Controller) SetSetpoint(id string, value float64, done func(error)) {
 		done(fmt.Errorf("unknown room %q", id))
 		return
 	}
-	if len(r.block) != 12 {
+	if len(r.block) != 12 || r.ecoOffset == nil {
 		done(errors.New("room settings not received yet, try again shortly"))
 		return
 	}
@@ -127,7 +127,7 @@ func (c *Controller) SetEco(id string, on bool, done func(error)) {
 		done(fmt.Errorf("unknown room %q", id))
 		return
 	}
-	if len(r.block) != 12 || r.Setpoint == nil {
+	if len(r.block) != 12 || r.Setpoint == nil || r.ecoOffset == nil {
 		done(errors.New("room settings not received yet, try again shortly"))
 		return
 	}
@@ -172,7 +172,7 @@ func (c *Controller) onWriteQuery(p []byte, now time.Time) {
 	addr := p[8]
 	w := c.writes[addr]
 	r := c.rooms[addr]
-	if w == nil || r == nil || len(r.block) != 12 {
+	if w == nil || r == nil || len(r.block) != 12 || r.ecoOffset == nil {
 		c.log("write query for 0x%02X without a pending change, ignored", addr)
 		return
 	}
@@ -186,7 +186,11 @@ func (c *Controller) onWriteQuery(p []byte, now time.Time) {
 		}
 	}
 	frame = append(frame, block...)
-	frame = append(frame, byte(w.raw>>8), byte(w.raw), 0, 0, 0, 0, 0, 0)
+	// setpoint (3B), then the ECO offset (3C) as the room has it – sending
+	// zero here resets the offset – then four bytes left at zero as the
+	// original firmware did
+	off := *r.ecoOffset
+	frame = append(frame, byte(w.raw>>8), byte(w.raw), byte(off>>8), byte(off), 0, 0, 0, 0)
 	if err := c.radio.Send(frame); err != nil {
 		c.log("TX %s failed: %v", w.what(), err)
 		return

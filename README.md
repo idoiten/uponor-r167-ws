@@ -105,6 +105,7 @@ Register bits, from the register map in Uponor's own gateway software
 | 35 | `0800` | remote control of the thermostat allowed |
 | 35 | `8000` | cooling allowed ✓ |
 | 35 | `0008` | ECO commanded for the room (set by the I-167 on Away) ✓ |
+| 3C | (word) | ECO offset in 0.1 °F ("ECO justering"; `0024` = 2.0 °C) ✓ |
 | 3D | `0008` | room is running ECO ✓ |
 | 3D | `0010` | home/away (forced ECO) |
 | 3D | `0040` | room in demand (heating) ✓ |
