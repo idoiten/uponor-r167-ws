@@ -1,4 +1,4 @@
-"""Binary sensors: radio connectivity, per-room bypass and radio alarm."""
+"""Binary sensors: radio connectivity, per-room bypass and alarms."""
 
 from __future__ import annotations
 
@@ -23,6 +23,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         lambda room_id: [
             UponorWsBypassSensor(entry, client, room_id, data["gateway_device_id"]),
             UponorWsRadioAlarmSensor(entry, client, room_id, data["gateway_device_id"]),
+            UponorWsAlarmSensor(entry, client, room_id, data["gateway_device_id"], "battery_alarm"),
+            UponorWsAlarmSensor(entry, client, room_id, data["gateway_device_id"], "technical_alarm"),
         ],
     )
 
@@ -95,3 +97,27 @@ class UponorWsRadioAlarmSensor(UponorWsRoomEntity, BinarySensorEntity):
     @property
     def is_on(self) -> bool | None:
         return (self.room or {}).get("radio_alarm")
+
+
+class UponorWsAlarmSensor(UponorWsRoomEntity, BinarySensorEntity):
+    """Battery or technical alarm for a room's thermostat.
+
+    These do not make the room unavailable: its values still arrive.
+    """
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _unavailable_on_radio_alarm = False
+
+    def __init__(self, entry, client, room_id, gateway_device_id, key: str) -> None:
+        super().__init__(entry, client, room_id, gateway_device_id)
+        self._key = key
+        self._attr_translation_key = key
+        self._attr_unique_id = f"{DOMAIN}_{room_id}_{key}"
+        # battery: on means low; problem: on means a problem
+        self._attr_device_class = (
+            BinarySensorDeviceClass.BATTERY if key == "battery_alarm" else BinarySensorDeviceClass.PROBLEM
+        )
+
+    @property
+    def is_on(self) -> bool | None:
+        return (self.room or {}).get(self._key)

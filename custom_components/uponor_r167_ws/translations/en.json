@@ -41,6 +41,12 @@
       },
       "radio_alarm": {
         "name": "Radio alarm"
+      },
+      "battery_alarm": {
+        "name": "Battery alarm"
+      },
+      "technical_alarm": {
+        "name": "Technical alarm"
       }
     }
   }

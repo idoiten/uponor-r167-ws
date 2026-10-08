@@ -41,6 +41,12 @@
       },
       "radio_alarm": {
         "name": "Radiolarm"
+      },
+      "battery_alarm": {
+        "name": "Batterilarm"
+      },
+      "technical_alarm": {
+        "name": "Tekniskt larm"
       }
     }
   }

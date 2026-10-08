@@ -90,16 +90,35 @@ Connect to `ws://<r167>:8765/ws`. The server sends JSON messages
 
 A room: `{"id": "4a", "channel": 18, "name": "K-E-V", "temperature": 22.2,
 "setpoint": 25.0, "min": 15.0, "max": 25.0, "bitmask": "0406", "heating": true, "bypass": false,
-"radio_alarm": false,
+"radio_alarm": false, "battery_alarm": false, "technical_alarm": false,
 "registers": {"3d": "0041", "3e": "0000", "3f": "0400"}, "last_update": "..."}`.
 `id` is the room's controller address and is stable. `radio_alarm` is true
 when the controller has lost contact with the thermostat (I-167: "Term. saknas",
 raised about an hour after the thermostat went silent).
 
-Register bits mapped so far: 3D `0040` heating demand, 3D `0200` room has an
-active alarm, 3E `0020` radio alarm, 3F `0800` thermostat just started. 3E
-`8000` appears after a thermostat restart and is not an alarm (meaning
-unknown).
+Register bits, from the register map in Uponor's own gateway software
+(`VT_REGMAP` in `platform`); ✓ = confirmed on a live system:
+
+| Register | Mask | Meaning |
+|---|---|---|
+| 35 | `0001` | bypass ✓ |
+| 35 | `0800` | remote control of the thermostat allowed |
+| 35 | `8000` | cooling allowed ✓ |
+| 3D | `0008` | ECO profile active |
+| 3D | `0010` | home/away (forced ECO) |
+| 3D | `0040` | room in demand (heating) ✓ |
+| 3D | `0080` | RH limit reached |
+| 3D | `0100` | floor limit reached |
+| 3E | `0003` | technical alarm |
+| 3E | `0010` | tamper (T-163 only) |
+| 3E | `0020` | radio alarm ✓ |
+| 3E | `0040` | battery alarm |
+| 3F | `0007` | thermostat type (0 analog, 1 public, 2 digital, 3 digital programmable) |
+| 3F | `0300` | regulation mode |
+
+Not used by Uponor's software: 3D `0001` and `0200` (`0200` follows an
+active alarm), 3E `8000` (appears after a thermostat restart), 3F `0400`
+and `0800` (`0800` while a thermostat starts up).
 
 Client commands:
 

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -81,11 +82,15 @@ type Room struct {
 	// room's thermostat (I-167: "Term. saknas"), about an hour after the
 	// thermostat went silent. Register 3E bit 0x0020.
 	RadioAlarm *bool `json:"radio_alarm"`
+	// BatteryAlarm (3E 0x0040) and TechnicalAlarm (3E 0x0003), bit
+	// positions from the register map in Uponor's own gateway software.
+	BatteryAlarm   *bool `json:"battery_alarm"`
+	TechnicalAlarm *bool `json:"technical_alarm"`
 	// Raw controller registers, hex: 3D status (heating demand, limits,
 	// ECO), 3E alarms (technical, tamper, RF, battery, RH sensor),
-	// 3F thermostat type / regulation mode. Mapped so far: 3D 0x0040
-	// heating demand, 3D 0x0200 room has an active alarm, 3E 0x0020
-	// radio alarm, 3F 0x0800 thermostat just started.
+	// 3F thermostat type / regulation mode, plus 35, the room settings
+	// set on the I-167 (0x0001 bypass, 0x0800 remote control allowed,
+	// 0x8000 cooling allowed). See the README for the full bit map.
 	Registers  map[string]string `json:"registers"`
 	LastUpdate string            `json:"last_update"`
 
@@ -206,6 +211,9 @@ func (c *Controller) Handle(p []byte) {
 		if r := c.rooms[p[11]]; r != nil {
 			r.block = append([]byte{}, p[15:27]...)
 			bypassChanged = setFlag(&r.Bypass, p[16]&0x01 != 0)
+			if c.setSettings(r) {
+				bypassChanged = true
+			}
 		}
 		c.confirmWrite(p[11], u16(p, 27))
 		c.updateRoom(p[11], nil, ptr(tempC(p, 27)), ptr(tempC(p, 19)), ptr(tempC(p, 21)), bypassChanged, now)
@@ -340,6 +348,9 @@ func (c *Controller) onRecord(p []byte, now time.Time) {
 	r.block = append([]byte{}, p[11:23]...)
 	c.confirmWrite(addr, u16(p, 23))
 	changed := setHeating(r, p[28]&0x40 != 0)
+	if c.setSettings(r) {
+		changed = true
+	}
 	if c.setRegisters(r, u16(p, 27), u16(p, 29), u16(p, 31)) {
 		changed = true
 	}
@@ -534,8 +545,12 @@ func (c *Controller) publishRoom(r *Room, changed bool, now time.Time) {
 
 var registerNames = []string{"3d", "3e", "3f"}
 
-// radioAlarmBit in register 3E: the controller has lost the thermostat.
-const radioAlarmBit = 0x0020
+// Alarm bits in register 3E (from VT_REGMAP in Uponor's platform).
+const (
+	technicalAlarmMask = 0x0003
+	radioAlarmMask     = 0x0020 // the controller has lost the thermostat
+	batteryAlarmMask   = 0x0040
+)
 
 var registerLabels = map[string]string{"3d": "status", "3e": "alarm", "3f": "type"}
 
@@ -564,16 +579,49 @@ func (c *Controller) setRegisters(r *Room, vals ...uint16) bool {
 			c.log("alarm register (3e) for %s is %s at start", room, v)
 		}
 	}
-	alarm := vals[1]&radioAlarmBit != 0
-	if (r.RadioAlarm == nil && alarm) || (r.RadioAlarm != nil && *r.RadioAlarm != alarm) {
-		if alarm {
-			c.log("radio alarm for %s: the controller has lost contact with the thermostat", room)
-		} else if r.RadioAlarm != nil {
-			c.log("radio alarm for %s cleared", room)
+	for _, a := range []struct {
+		dst  **bool
+		mask uint16
+		text string
+	}{
+		{&r.RadioAlarm, radioAlarmMask, "radio alarm for %s: the controller has lost contact with the thermostat"},
+		{&r.BatteryAlarm, batteryAlarmMask, "battery alarm for %s: replace the thermostat's batteries"},
+		{&r.TechnicalAlarm, technicalAlarmMask, "technical alarm for %s"},
+	} {
+		on := vals[1]&a.mask != 0
+		if on && (*a.dst == nil || !**a.dst) {
+			c.log(a.text, room)
+		} else if !on && *a.dst != nil && **a.dst {
+			c.log("%s cleared", strings.SplitN(fmt.Sprintf(a.text, room), ":", 2)[0])
+		}
+		if setFlag(a.dst, on) {
+			changed = true
 		}
 	}
-	if setFlag(&r.RadioAlarm, alarm) {
-		changed = true
-	}
 	return changed
+}
+
+// setSettings stores register 35, the room settings echoed in the
+// settings block (first word), and logs changes.
+func (c *Controller) setSettings(r *Room) bool {
+	if len(r.block) < 2 {
+		return false
+	}
+	if r.Registers == nil {
+		r.Registers = map[string]string{}
+	}
+	v := fmt.Sprintf("%04x", u16(r.block, 0))
+	old, known := r.Registers["35"]
+	if known && old == v {
+		return false
+	}
+	r.Registers["35"] = v
+	if known {
+		room := r.Name
+		if room == "" {
+			room = "room " + r.ID
+		}
+		c.log("settings register (35) for %s changed %s -> %s", room, old, v)
+	}
+	return true
 }

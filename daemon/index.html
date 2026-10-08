@@ -33,7 +33,11 @@
   .badge { font-size: 12px; font-weight: normal; padding: 1px 8px; border-radius: 99px;
            border: 1px solid var(--line); color: var(--muted); }
   .badge.on { border-color: var(--accent); color: var(--accent); }
-  .badge.alarm { border-color: var(--bad); color: var(--bad); }
+  .alarms { display: flex; gap: 14px; margin-top: 8px; font-size: 12px; color: var(--muted); }
+  .alarms span { display: inline-flex; align-items: center; gap: 5px; }
+  .alarms i { width: 9px; height: 9px; border-radius: 50%; background: var(--line); display: inline-block; }
+  .alarms i.ok { background: var(--ok); }
+  .alarms i.bad { background: var(--bad); }
   .sp { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
   .sp .label { color: var(--muted); font-size: 13px; margin-right: auto; }
   .sp button { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--line);
@@ -69,6 +73,11 @@ const drafts = new Map();    // id -> {value, timer, sending}
 let status = null, device = {}, connected = false, ws = null, nextId = 1;
 const pending = new Map();   // command id -> room id
 const SEND_DELAY = 1500;     // ms after the last click before sending
+const ALARMS = [
+  { key: "radio_alarm", label: "Radio", alarm: "Radio alarm: the controller has lost contact with the thermostat" },
+  { key: "battery_alarm", label: "Battery", alarm: "Battery alarm: replace the thermostat's batteries" },
+  { key: "technical_alarm", label: "Technical", alarm: "Technical alarm" },
+];
 
 const fmt = v => (v === null || v === undefined) ? "–" : v.toFixed(1) + " °C";
 
@@ -85,7 +94,7 @@ function ago(ts) {
 
 function metaText(r) {
   const g = r.registers || {};
-  const regs = g["3d"] ? ` · 3D ${g["3d"]} 3E ${g["3e"]} 3F ${g["3f"]}` : "";
+  const regs = g["3d"] ? ` · 35 ${g["35"] || "–"} 3D ${g["3d"]} 3E ${g["3e"]} 3F ${g["3f"]}` : "";
   return `Limits ${fmt(r.min)} – ${fmt(r.max)}${regs} · updated ${ago(r.last_update)}`;
 }
 
@@ -165,11 +174,12 @@ function renderRoom(r, flash) {
   if (!el) {
     el = document.createElement("div");
     el.className = "room"; el.id = "room-" + r.id;
-    el.innerHTML = '<h2><span class="name"></span><span class="badges"><span class="badge alarm" title="The controller has lost contact with the thermostat">Radio alarm</span> <span class="badge bypass">Bypass</span> <span class="badge state"></span></span></h2>' +
+    el.innerHTML = '<h2><span class="name"></span><span class="badges"><span class="badge bypass">Bypass</span> <span class="badge state"></span></span></h2>' +
       '<div class="temp"></div>' +
       '<div class="sp"><span class="label">Setpoint</span><button class="dec" aria-label="Lower">−</button>' +
       '<span class="spv"></span><button class="inc" aria-label="Raise">+</button></div>' +
-      '<div class="msg"></div><div class="meta"></div>';
+      '<div class="msg"></div><div class="meta"></div>' +
+      '<div class="alarms">' + ALARMS.map(a => `<span class="${a.key}"><i></i>${a.label}</span>`).join("") + '</div>';
     el.querySelector(".dec").onclick = () => step(r.id, -0.5);
     el.querySelector(".inc").onclick = () => step(r.id, +0.5);
     document.getElementById("rooms").appendChild(el);
@@ -178,7 +188,11 @@ function renderRoom(r, flash) {
   const shown = d ? d.value : r.setpoint;
   el.querySelector(".name").textContent = r.name;
   el.querySelector(".bypass").style.display = r.bypass ? "" : "none";
-  el.querySelector(".alarm").style.display = r.radio_alarm ? "" : "none";
+  for (const a of ALARMS) {
+    const v = r[a.key], span = el.querySelector("." + a.key);
+    span.querySelector("i").className = v == null ? "" : (v ? "bad" : "ok");
+    span.title = v == null ? `${a.label}: unknown (not heard yet)` : (v ? a.alarm : `${a.label}: OK`);
+  }
   const b = el.querySelector(".state");
   b.textContent = r.heating == null ? "–" : (r.heating ? "Heating" : "Idle");
   b.className = "badge state" + (r.heating ? " on" : "");

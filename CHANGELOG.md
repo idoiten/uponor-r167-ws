@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.7.0] - 2026-10-08
+
+### Added
+- **Battery and technical alarms per room**, with bit positions taken from
+  the register map in Uponor's own gateway software: 3E `0x0040` battery
+  alarm, 3E `0x0003` technical alarm (radio alarm `0x0020` from 0.6.0 is
+  confirmed by the same map). Rooms carry `battery_alarm` and
+  `technical_alarm`; uhomed logs when they are raised and cleared. In HA
+  each room gets the diagnostic binary sensors **Battery alarm**
+  (*Batterilarm*, device class battery) and **Technical alarm**
+  (*Tekniskt larm*, device class problem). Unlike the radio alarm they do
+  not make the room unavailable.
+- **Register 35**, the room settings set on the I-167 (bypass, remote
+  control allowed, cooling allowed), is exposed with the other raw
+  registers (`register_35` on the climate entity, and on the web page).
+  Changes are logged.
+- Web page: each room shows a row of status dots – Radio, Battery,
+  Technical – green when OK, red on alarm, grey until the room has been
+  heard; hover for details. Replaces the "Radio alarm" badge.
+- README: full register bit map.
+
 ## [0.6.0] - 2026-10-08
 
 ### Added

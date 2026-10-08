@@ -444,3 +444,63 @@ func TestLateSetpointConfirmation(t *testing.T) {
 		}
 	}
 }
+
+func TestBatteryAndTechnicalAlarms(t *testing.T) {
+	fr := &fakeRadio{records: loadRecords(t)}
+	var logs []string
+	logf := func(f string, a ...any) { logs = append(logs, fmt.Sprintf(f, a...)) }
+	c := NewController(fr, logf, func(string, any) {}, time.Hour)
+	c.names[0x12] = "K-E-V"
+	c.Handle(fr.records[0x4A])
+	r := c.rooms[0x4A]
+	hdr := mustHex("14 FF 3C 1A 01 17 00 52 00 0B 00 4A 00 08 10 88 00 00 64 02 4E 03 02 02 A8 03 14 03 02 00 00")
+	// 3E 0x0041: battery alarm (0x0040) and technical alarm (0x0001).
+	c.Handle(hdr)
+	c.Handle(mustHex("14 FF 3C 1A 01 17 16 02 41 00 41 04 00 02 D0 7F FF 90 00 00 00 00 00 00 00 00 00 04 06"))
+	if !*r.BatteryAlarm || !*r.TechnicalAlarm || *r.RadioAlarm {
+		t.Fatalf("battery %v technical %v radio %v", *r.BatteryAlarm, *r.TechnicalAlarm, *r.RadioAlarm)
+	}
+	for _, want := range []string{
+		"battery alarm for K-E-V: replace the thermostat's batteries",
+		"technical alarm for K-E-V",
+	} {
+		if !hasLog(logs, want) {
+			t.Fatalf("missing %q in %v", want, logs)
+		}
+	}
+	c.Handle(hdr)
+	c.Handle(mustHex("14 FF 3C 1A 01 17 16 00 41 00 00 04 00 02 D0 7F FF 90 00 00 00 00 00 00 00 00 00 04 06"))
+	if *r.BatteryAlarm || *r.TechnicalAlarm {
+		t.Fatal("alarms not cleared")
+	}
+	if !hasLog(logs, "battery alarm for K-E-V cleared") || !hasLog(logs, "technical alarm for K-E-V cleared") {
+		t.Fatalf("missing cleared logs: %v", logs)
+	}
+	b, _ := json.Marshal(r)
+	for _, k := range []string{`"battery_alarm":false`, `"technical_alarm":false`} {
+		if !strings.Contains(string(b), k) {
+			t.Fatalf("%s missing from JSON: %s", k, b)
+		}
+	}
+}
+
+func TestSettingsRegister(t *testing.T) {
+	fr := &fakeRadio{records: loadRecords(t)}
+	var logs []string
+	logf := func(f string, a ...any) { logs = append(logs, fmt.Sprintf(f, a...)) }
+	c := NewController(fr, logf, func(string, any) {}, time.Hour)
+	c.names[0x12] = "K-E-V"
+	c.Handle(fr.records[0x4A])
+	r := c.rooms[0x4A]
+	if got := r.Registers["35"]; got != "8800" {
+		t.Fatalf("register 35 = %q, want 8800 (cooling + remote control allowed)", got)
+	}
+	// Cooling switched off on the I-167: settings block starts 08 00.
+	c.Handle(mustHex("14 FF 3C 1A 01 17 00 52 00 0B 00 4A 00 08 10 08 00 00 64 02 4E 03 02 02 A8 03 14 03 02 00 00"))
+	if got := r.Registers["35"]; got != "0800" {
+		t.Fatalf("register 35 = %q, want 0800", got)
+	}
+	if !hasLog(logs, "settings register (35) for K-E-V changed 8800 -> 0800") {
+		t.Fatalf("missing log: %v", logs)
+	}
+}
