@@ -81,13 +81,16 @@ Connect to `ws://<r167>:8765/ws`. The server sends JSON messages
 
 | type | data |
 |---|---|
-| `snapshot` | `{status, system, rooms[]}` – sent on connect and on request |
+| `snapshot` | `{status, system, device, rooms[]}` – sent on connect and on request |
 | `room` | one room, sent when any of its values change |
 | `system` | `{outdoor_temperature, average_temperature}` |
-| `status` | `{version, radio_ok, last_frame, frames, records, rejected_data_frames}` |
+| `status` | `{version, radio_ok, last_frame, frames, records, rejected_data_frames}` – when the radio comes or goes |
+| `stats` | same as `status`, every 10 s while frames arrive (for the web page's counters) |
+| `device` | `{temperature}` – the R-167's processor temperature in °C, when it changes (read every minute) |
 
 A room: `{"id": "4a", "channel": 18, "name": "K-E-V", "temperature": 22.2,
-"setpoint": 25.0, "min": 15.0, "max": 25.0, "bitmask": "0406", "heating": true, "bypass": false, "last_update": "..."}`.
+"setpoint": 25.0, "min": 15.0, "max": 25.0, "bitmask": "0406", "heating": true, "bypass": false,
+"registers": {"3d": "0041", "3e": "0000", "3f": "0400"}, "last_update": "..."}`.
 `id` is the room's controller address and is stable.
 
 Client commands:

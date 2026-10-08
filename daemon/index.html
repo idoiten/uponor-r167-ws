@@ -65,7 +65,7 @@
 <script>
 const rooms = new Map();     // id -> room from uhomed
 const drafts = new Map();    // id -> {value, timer, sending}
-let status = null, connected = false, ws = null, nextId = 1;
+let status = null, device = {}, connected = false, ws = null, nextId = 1;
 const pending = new Map();   // command id -> room id
 const SEND_DELAY = 1500;     // ms after the last click before sending
 
@@ -94,7 +94,8 @@ function renderStatus() {
   document.getElementById("status").textContent =
     !connected ? "Disconnected – retrying" : (status && status.radio_ok ? "Radio OK" : "No radio traffic");
   if (status) document.getElementById("footer").textContent =
-    `uhomed ${status.version} · frames ${status.frames} · records ${status.records} · rejected data frames ${status.rejected_data_frames}`;
+    `uhomed ${status.version} · frames ${status.frames} · records ${status.records} · rejected data frames ${status.rejected_data_frames}` +
+    (device.temperature != null ? ` · device ${fmt(device.temperature)}` : "");
 }
 
 function setMsg(id, text, cls) {
@@ -217,7 +218,7 @@ function connect() {
   ws.onmessage = ev => {
     const m = JSON.parse(ev.data);
     if (m.type === "snapshot") {
-      status = m.data.status; renderSystem(m.data.system);
+      status = m.data.status; device = m.data.device || {}; renderSystem(m.data.system);
       document.getElementById("rooms").innerHTML = ""; rooms.clear();
       m.data.rooms.forEach(r => { rooms.set(r.id, r); renderRoom(r, false); });
       sortRooms();
@@ -227,6 +228,8 @@ function connect() {
       if (isNew) sortRooms();
     } else if (m.type === "system") {
       renderSystem(m.data);
+    } else if (m.type === "device") {
+      device = m.data;
     } else if (m.type === "status" || m.type === "stats") {
       status = m.data;
     } else if (m.type === "result") {

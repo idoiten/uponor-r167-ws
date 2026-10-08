@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-const version = "0.4.3"
+const version = "0.5.0"
 
 //go:embed index.html
 var webFiles embed.FS
@@ -102,6 +102,7 @@ func main() {
 	wdDev := flag.String("watchdog", "/dev/watchdog", "watchdog device (empty = don't feed)")
 	replay := flag.String("replay", "", "replay a captured ttyLP2 byte stream instead of using the modem (testing)")
 	replayDelay := flag.Duration("replay-delay", 50*time.Millisecond, "delay between replayed frames")
+	tempPath := flag.String("temp-sensor", "/sys/bus/iio/devices/iio:device0/in_temp_input", "SoC temperature sensor (empty = none)")
 	reqInterval := flag.Duration("request-interval", 8*time.Second, "minimum time between record requests")
 	flag.StringVar(&logPath, "log", "/tmp/uhomed.log", "log file (empty = stderr only)")
 	force := flag.Bool("force", false, "start even if the original Uponor software is running")
@@ -145,6 +146,9 @@ func main() {
 
 	go radio.Run(ctrl.Handle)
 	go ctrl.Watch()
+	if *tempPath != "" && *replay == "" {
+		go ctrl.WatchDeviceTemp(*tempPath)
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {

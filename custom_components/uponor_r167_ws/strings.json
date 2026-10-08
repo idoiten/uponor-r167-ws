@@ -27,6 +27,9 @@
       },
       "average_temperature": {
         "name": "Average indoor temperature"
+      },
+      "device_temperature": {
+        "name": "Device temperature"
       }
     },
     "binary_sensor": {

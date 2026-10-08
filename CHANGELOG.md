@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0] - 2026-10-08
+
+### Added
+- **Device temperature.** uhomed reads the R-167's processor temperature
+  (the NXP Vybrid's internal sensor, `/sys/bus/iio/devices/iio:device0/in_temp_input`)
+  every minute, averaging five samples, and pushes a new `device` message
+  when the value changes. Shown in the web page footer and as the
+  diagnostic sensor **Device temperature** (*Enhetstemperatur*) on the
+  Uponor R-167 device in HA. The sensor is uncalibrated, so treat the value
+  as a trend rather than an exact reading. New flag `-temp-sensor` (empty
+  disables it).
+
 ## [0.4.3] - 2026-10-02
 
 ### Changed

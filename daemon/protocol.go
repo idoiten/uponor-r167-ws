@@ -109,6 +109,7 @@ type Status struct {
 type Snapshot struct {
 	Status Status  `json:"status"`
 	System System  `json:"system"`
+	Device Device  `json:"device"`
 	Rooms  []*Room `json:"rooms"`
 }
 
@@ -124,6 +125,7 @@ type Controller struct {
 	chanAddr  map[byte]byte   // channel -> address (learned from records)
 	rooms     map[byte]*Room  // address -> room
 	system    System
+	device    Device
 	lastFrame time.Time
 	frames    int
 	records   int
@@ -460,7 +462,7 @@ func (c *Controller) Watch() {
 func (c *Controller) Snapshot() Snapshot {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	s := Snapshot{Status: c.statusLocked(time.Now()), System: c.system, Rooms: []*Room{}}
+	s := Snapshot{Status: c.statusLocked(time.Now()), System: c.system, Device: c.device, Rooms: []*Room{}}
 	for _, r := range c.rooms {
 		if r.Name != "" {
 			cp := *r

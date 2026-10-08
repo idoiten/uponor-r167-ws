@@ -1,10 +1,10 @@
-"""Temperature sensors: one per room plus the system-wide ones."""
+"""Temperature sensors: one per room, the system-wide ones and the gateway itself."""
 
 from __future__ import annotations
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfTemperature
+from homeassistant.const import EntityCategory, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 
@@ -19,6 +19,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         [
             UponorWsSystemSensor(entry, client, "outdoor_temperature"),
             UponorWsSystemSensor(entry, client, "average_temperature"),
+            UponorWsDeviceTemperature(entry, client),
         ]
     )
     setup_room_platform(
@@ -50,6 +51,27 @@ class UponorWsSystemSensor(UponorWsEntity, _TemperatureSensor):
     @property
     def native_value(self) -> float | None:
         return self._client.system.get(self._key)
+
+    @property
+    def available(self) -> bool:
+        return self._client.connected and self.native_value is not None
+
+
+class UponorWsDeviceTemperature(UponorWsEntity, _TemperatureSensor):
+    """Temperature of the R-167's processor (its internal sensor)."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_translation_key = "device_temperature"
+
+    def __init__(self, entry: ConfigEntry, client) -> None:
+        super().__init__(entry, client)
+        self._attr_unique_id = f"{DOMAIN}_device_temperature"
+        host, port = entry.data["host"], entry.data["port"]
+        self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, f"{host}:{port}")})
+
+    @property
+    def native_value(self) -> float | None:
+        return self._client.device.get("temperature")
 
     @property
     def available(self) -> bool:

@@ -338,3 +338,25 @@ func TestRawToCTruncates(t *testing.T) {
 		}
 	}
 }
+
+func TestDeviceTemperature(t *testing.T) {
+	path := t.TempDir() + "/in_temp_input"
+	if err := os.WriteFile(path, []byte("65217\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var msgs []string
+	pub := func(typ string, d any) { msgs = append(msgs, string(encode(typ, d))) }
+	c := NewController(&fakeRadio{}, t.Logf, pub, 0)
+
+	c.setDeviceTemp(readDeviceTemp(path))
+	c.setDeviceTemp(readDeviceTemp(path)) // unchanged: no second message
+	if len(msgs) != 1 || msgs[0] != `{"type":"device","data":{"temperature":65.2}}` {
+		t.Fatalf("messages = %v", msgs)
+	}
+	if s := c.Snapshot(); s.Device.Temperature == nil || *s.Device.Temperature != 65.2 {
+		t.Fatalf("snapshot device = %+v", s.Device)
+	}
+	if v := readDeviceTemp(path + ".missing"); v != nil {
+		t.Fatalf("missing sensor gave %v", *v)
+	}
+}

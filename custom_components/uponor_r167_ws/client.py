@@ -29,6 +29,7 @@ class UponorWsClient:
         self.rooms: dict[str, dict[str, Any]] = {}
         self.system: dict[str, Any] = {}
         self.status: dict[str, Any] = {}
+        self.device: dict[str, Any] = {}
         self.connected = False
         self._task: asyncio.Task | None = None
         self._first_snapshot = asyncio.Event()
@@ -111,6 +112,7 @@ class UponorWsClient:
         if kind == "snapshot":
             self.status = data.get("status", {})
             self.system = data.get("system", {})
+            self.device = data.get("device") or {}
             new = {r["id"]: r for r in data.get("rooms", [])}
             added = [rid for rid in new if rid not in self.rooms]
             # Merge instead of replace: right after uhomed restarts its
@@ -128,6 +130,9 @@ class UponorWsClient:
         elif kind == "system":
             self.system = data
             self._notify("system", data)
+        elif kind == "device":
+            self.device = data or {}
+            self._notify("device", data)
         elif kind == "status":
             self.status = data
             self._notify("status", data)
