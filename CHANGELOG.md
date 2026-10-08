@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.6.0] - 2026-10-08
+
+### Added
+- **Radio alarm per room.** Register 3E bit `0x0020` is set when the
+  controller has lost contact with a thermostat (the I-167 shows
+  "Term. saknas", about an hour after the thermostat went silent) and
+  clears as soon as it is heard again. Rooms carry a new `radio_alarm`
+  field; uhomed logs when it is raised and cleared. In HA each room gets a
+  diagnostic binary sensor **Radio alarm** (*Radiolarm*, device class
+  problem), and the room's thermostat and temperature sensor turn
+  unavailable while the alarm is active instead of showing stale values.
+  The web page shows a red "Radio alarm" badge.
+- README: register bits mapped so far (3D `0040` heating demand, 3D `0200`
+  active alarm, 3E `0020` radio alarm, 3F `0800` thermostat just started).
+
+### Fixed
+- Setpoints outside the room's min/max are ignored (and logged). While the
+  I-167 restarts it briefly reported 30 °C for a room with a 25 °C maximum,
+  which reached HA.
+- Setpoint writes: the I-167 sometimes needs well over 10 s to pass a
+  change on, and flagging the write again restarted its work, so a write
+  could time out although it went through. uhomed now resends after 30 s
+  instead of 10 s, waits up to 2 minutes instead of 1, and recognises a
+  confirmation arriving shortly after the timeout as its own write instead
+  of logging it as a change made on the system.
+
 ## [0.5.0] - 2026-10-08
 
 ### Added

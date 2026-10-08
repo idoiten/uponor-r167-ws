@@ -90,8 +90,16 @@ Connect to `ws://<r167>:8765/ws`. The server sends JSON messages
 
 A room: `{"id": "4a", "channel": 18, "name": "K-E-V", "temperature": 22.2,
 "setpoint": 25.0, "min": 15.0, "max": 25.0, "bitmask": "0406", "heating": true, "bypass": false,
+"radio_alarm": false,
 "registers": {"3d": "0041", "3e": "0000", "3f": "0400"}, "last_update": "..."}`.
-`id` is the room's controller address and is stable.
+`id` is the room's controller address and is stable. `radio_alarm` is true
+when the controller has lost contact with the thermostat (I-167: "Term. saknas",
+raised about an hour after the thermostat went silent).
+
+Register bits mapped so far: 3D `0040` heating demand, 3D `0200` room has an
+active alarm, 3E `0020` radio alarm, 3F `0800` thermostat just started. 3E
+`8000` appears after a thermostat restart and is not an alarm (meaning
+unknown).
 
 Client commands:
 

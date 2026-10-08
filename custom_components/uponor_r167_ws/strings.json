@@ -38,6 +38,9 @@
       },
       "bypass": {
         "name": "Bypass"
+      },
+      "radio_alarm": {
+        "name": "Radio alarm"
       }
     }
   }

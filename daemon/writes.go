@@ -23,9 +23,19 @@ import (
 //     which is how the write is confirmed.
 
 const (
-	writeTimeout     = 60 * time.Second
-	writeResendAfter = 10 * time.Second
+	// The I-167 sometimes needs well over 10 s to pass a change on, and
+	// flagging the write again restarts its work, so resend sparingly.
+	writeTimeout     = 2 * time.Minute
+	writeResendAfter = 30 * time.Second
+	// A confirmation this long after the timeout is still recognised as
+	// our write rather than logged as a change made on the system.
+	writeLateWindow = 2 * time.Minute
 )
+
+type lateWrite struct {
+	value float64
+	until time.Time
+}
 
 type pendingWrite struct {
 	addr      byte
@@ -88,6 +98,7 @@ func (c *Controller) writeFlag(now time.Time) byte {
 			c.log("setpoint write for 0x%02X timed out", addr)
 			w.done(errors.New("the heating system did not confirm the new setpoint"))
 			delete(c.writes, addr)
+			c.lateWrites[addr] = lateWrite{value: w.value, until: now.Add(writeLateWindow)}
 			continue
 		}
 		if !w.sentAt.IsZero() && now.Sub(w.sentAt) < writeResendAfter {
@@ -132,10 +143,26 @@ func (c *Controller) confirmWrite(addr byte, raw uint16) {
 	if w == nil || w.sentAt.IsZero() || raw != w.raw {
 		return
 	}
+	delete(c.lateWrites, addr)
 	c.log("setpoint %.1f confirmed for 0x%02X", w.value, addr)
 	if r := c.rooms[addr]; r != nil {
 		r.ownSetpoint = ptr(w.value)
 	}
 	delete(c.writes, addr)
 	w.done(nil)
+}
+
+// lateConfirm reports whether a setpoint change is a write of ours that
+// was confirmed after it had timed out.
+func (c *Controller) lateConfirm(addr byte, value float64, now time.Time) bool {
+	lw, ok := c.lateWrites[addr]
+	if !ok {
+		return false
+	}
+	delete(c.lateWrites, addr)
+	if now.After(lw.until) || lw.value != value {
+		return false
+	}
+	c.log("setpoint %.1f confirmed for 0x%02X after the write had timed out", value, addr)
+	return true
 }

@@ -33,6 +33,7 @@
   .badge { font-size: 12px; font-weight: normal; padding: 1px 8px; border-radius: 99px;
            border: 1px solid var(--line); color: var(--muted); }
   .badge.on { border-color: var(--accent); color: var(--accent); }
+  .badge.alarm { border-color: var(--bad); color: var(--bad); }
   .sp { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
   .sp .label { color: var(--muted); font-size: 13px; margin-right: auto; }
   .sp button { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--line);
@@ -164,7 +165,7 @@ function renderRoom(r, flash) {
   if (!el) {
     el = document.createElement("div");
     el.className = "room"; el.id = "room-" + r.id;
-    el.innerHTML = '<h2><span class="name"></span><span class="badges"><span class="badge bypass">Bypass</span> <span class="badge state"></span></span></h2>' +
+    el.innerHTML = '<h2><span class="name"></span><span class="badges"><span class="badge alarm" title="The controller has lost contact with the thermostat">Radio alarm</span> <span class="badge bypass">Bypass</span> <span class="badge state"></span></span></h2>' +
       '<div class="temp"></div>' +
       '<div class="sp"><span class="label">Setpoint</span><button class="dec" aria-label="Lower">−</button>' +
       '<span class="spv"></span><button class="inc" aria-label="Raise">+</button></div>' +
@@ -177,6 +178,7 @@ function renderRoom(r, flash) {
   const shown = d ? d.value : r.setpoint;
   el.querySelector(".name").textContent = r.name;
   el.querySelector(".bypass").style.display = r.bypass ? "" : "none";
+  el.querySelector(".alarm").style.display = r.radio_alarm ? "" : "none";
   const b = el.querySelector(".state");
   b.textContent = r.heating == null ? "–" : (r.heating ? "Heating" : "Idle");
   b.className = "badge state" + (r.heating ? " on" : "");

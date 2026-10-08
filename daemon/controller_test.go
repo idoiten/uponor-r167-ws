@@ -291,7 +291,7 @@ func TestAlarmRegisterLogged(t *testing.T) {
 	if got := c.rooms[0x74].Registers["3e"]; got != "8000" {
 		t.Fatalf("Sovrum 2 alarm register = %q, want 8000", got)
 	}
-	// K-E-V header + data frame with a (made-up) alarm bit 0x0020 in 3E.
+	// K-E-V header + data frame with the radio alarm bit 0x0020 in 3E.
 	c.Handle(mustHex("14 FF 3C 1A 01 17 00 52 00 0B 00 4A 00 08 10 88 00 00 64 02 4E 03 02 02 A8 03 14 03 02 00 00"))
 	c.Handle(mustHex("14 FF 3C 1A 01 17 16 00 41 00 20 04 00 02 D0 7F FF 90 00 00 00 00 00 00 00 00 00 04 06"))
 	want := "alarm register (3e) for K-E-V changed 0000 -> 0020"
@@ -358,5 +358,89 @@ func TestDeviceTemperature(t *testing.T) {
 	}
 	if v := readDeviceTemp(path + ".missing"); v != nil {
 		t.Fatalf("missing sensor gave %v", *v)
+	}
+}
+
+func hasLog(logs []string, want string) bool {
+	for _, l := range logs {
+		if l == want {
+			return true
+		}
+	}
+	return false
+}
+
+func TestRadioAlarm(t *testing.T) {
+	fr := &fakeRadio{records: loadRecords(t)}
+	var logs []string
+	logf := func(f string, a ...any) { logs = append(logs, fmt.Sprintf(f, a...)) }
+	c := NewController(fr, logf, func(string, any) {}, time.Hour)
+	c.names[0x12] = "K-E-V"
+	c.Handle(fr.records[0x4A])
+	r := c.rooms[0x4A]
+	if r.RadioAlarm == nil || *r.RadioAlarm {
+		t.Fatalf("radio alarm = %v, want false", r.RadioAlarm)
+	}
+	hdr := mustHex("14 FF 3C 1A 01 17 00 52 00 0B 00 4A 00 08 10 88 00 00 64 02 4E 03 02 02 A8 03 14 03 02 00 00")
+	// As captured 2026-10-08: 3D 0041 -> 0241, 3E 0000 -> 0020.
+	c.Handle(hdr)
+	c.Handle(mustHex("14 FF 3C 1A 01 17 16 02 41 00 20 04 00 02 D0 7F FF 90 00 00 00 00 00 00 00 00 00 04 06"))
+	if !*r.RadioAlarm || !hasLog(logs, "radio alarm for K-E-V: the controller has lost contact with the thermostat") {
+		t.Fatalf("radio alarm not raised: %v", logs)
+	}
+	c.Handle(hdr)
+	c.Handle(mustHex("14 FF 3C 1A 01 17 16 00 41 00 00 04 00 02 D0 7F FF 90 00 00 00 00 00 00 00 00 00 04 06"))
+	if *r.RadioAlarm || !hasLog(logs, "radio alarm for K-E-V cleared") {
+		t.Fatalf("radio alarm not cleared: %v", logs)
+	}
+	if b, _ := json.Marshal(r); !strings.Contains(string(b), `"radio_alarm":false`) {
+		t.Fatalf("radio_alarm missing from JSON: %s", b)
+	}
+}
+
+func TestSetpointOutsideLimitsIgnored(t *testing.T) {
+	fr := &fakeRadio{records: loadRecords(t)}
+	var logs []string
+	logf := func(f string, a ...any) { logs = append(logs, fmt.Sprintf(f, a...)) }
+	c := NewController(fr, logf, func(string, any) {}, time.Hour)
+	c.names[0x12] = "K-E-V"
+	c.Handle(fr.records[0x4A])
+	before := *c.rooms[0x4A].Setpoint
+	// Header with setpoint 30.0 (03 5C) while the room's maximum is 25.0,
+	// as seen while the I-167 restarted.
+	c.Handle(mustHex("14 FF 3C 1A 01 17 00 52 00 0B 00 4A 00 08 10 88 00 00 64 02 4E 03 02 02 A8 03 14 03 5C 00 00"))
+	if got := *c.rooms[0x4A].Setpoint; got != before {
+		t.Fatalf("setpoint = %v, want %v kept", got, before)
+	}
+	if !hasLog(logs, "ignored setpoint 30.0 for K-E-V: outside the room's limits") {
+		t.Fatalf("missing log: %v", logs)
+	}
+}
+
+func TestLateSetpointConfirmation(t *testing.T) {
+	fr := &fakeRadio{records: loadRecords(t)}
+	var logs []string
+	logf := func(f string, a ...any) { logs = append(logs, fmt.Sprintf(f, a...)) }
+	c := NewController(fr, logf, func(string, any) {}, time.Hour)
+	c.names[0x12] = "K-E-V"
+	c.Handle(fr.records[0x4A])
+	var result error
+	c.SetSetpoint("4a", 24.5, func(err error) { result = err })
+	c.Handle(mustHex("14 FF 3C 1A 1F 85 01 00 4A 00 08")) // the I-167 fetches it
+	// The write times out before the controller confirms it ...
+	c.writes[0x4A].created = time.Now().Add(-3 * time.Minute)
+	c.writeFlag(time.Now())
+	if result == nil || len(c.writes) != 0 {
+		t.Fatalf("write should have timed out: %v", result)
+	}
+	// ... and the new setpoint shows up shortly after.
+	c.Handle(mustHex("14 FF 3C 1A 01 17 00 52 00 0B 00 4A 00 08 10 88 00 00 64 02 4E 03 02 02 A8 03 14 02 F9 00 00"))
+	if !hasLog(logs, "setpoint 24.5 confirmed for 0x4A after the write had timed out") {
+		t.Fatalf("late confirmation not recognised: %v", logs)
+	}
+	for _, l := range logs {
+		if strings.Contains(l, "changed on the system") {
+			t.Fatalf("logged as external change: %q", l)
+		}
 	}
 }

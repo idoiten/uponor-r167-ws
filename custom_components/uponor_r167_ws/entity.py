@@ -40,6 +40,10 @@ class UponorWsEntity(Entity):
 class UponorWsRoomEntity(UponorWsEntity):
     """An entity belonging to one room (thermostat channel)."""
 
+    # Measured values go stale when the controller has lost the thermostat
+    # (radio alarm), so such entities report unavailable meanwhile.
+    _unavailable_on_radio_alarm = True
+
     def __init__(
         self, entry: ConfigEntry, client: UponorWsClient, room_id: str, gateway_device_id: str
     ) -> None:
@@ -60,7 +64,10 @@ class UponorWsRoomEntity(UponorWsEntity):
 
     @property
     def available(self) -> bool:
-        return self._client.connected and self.room is not None
+        room = self.room
+        if not self._client.connected or room is None:
+            return False
+        return not (self._unavailable_on_radio_alarm and room.get("radio_alarm"))
 
 
 def setup_room_platform(

@@ -1,4 +1,4 @@
-"""Binary sensors: radio connectivity and per-room bypass."""
+"""Binary sensors: radio connectivity, per-room bypass and radio alarm."""
 
 from __future__ import annotations
 
@@ -20,7 +20,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         hass,
         entry,
         async_add_entities,
-        lambda room_id: [UponorWsBypassSensor(entry, client, room_id, data["gateway_device_id"])],
+        lambda room_id: [
+            UponorWsBypassSensor(entry, client, room_id, data["gateway_device_id"]),
+            UponorWsRadioAlarmSensor(entry, client, room_id, data["gateway_device_id"]),
+        ],
     )
 
 
@@ -62,6 +65,7 @@ class UponorWsBypassSensor(UponorWsRoomEntity, BinarySensorEntity):
     """On when bypass is enabled for the room (set on the I-167)."""
 
     _attr_translation_key = "bypass"
+    _unavailable_on_radio_alarm = False  # a setting, not a measurement
 
     def __init__(self, entry, client, room_id, gateway_device_id) -> None:
         super().__init__(entry, client, room_id, gateway_device_id)
@@ -70,3 +74,24 @@ class UponorWsBypassSensor(UponorWsRoomEntity, BinarySensorEntity):
     @property
     def is_on(self) -> bool | None:
         return (self.room or {}).get("bypass")
+
+
+class UponorWsRadioAlarmSensor(UponorWsRoomEntity, BinarySensorEntity):
+    """On when the controller has lost contact with the room's thermostat.
+
+    Raised by the system about an hour after the thermostat went silent
+    (dead batteries, removed from the wall); the I-167 shows "Term. saknas".
+    """
+
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_translation_key = "radio_alarm"
+    _unavailable_on_radio_alarm = False  # this sensor reports the alarm
+
+    def __init__(self, entry, client, room_id, gateway_device_id) -> None:
+        super().__init__(entry, client, room_id, gateway_device_id)
+        self._attr_unique_id = f"{DOMAIN}_{room_id}_radio_alarm"
+
+    @property
+    def is_on(self) -> bool | None:
+        return (self.room or {}).get("radio_alarm")

@@ -1,7 +1,7 @@
 {
   "domain": "uponor_r167_ws",
   "name": "Uponor R-167 (WebSocket)",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "config_flow": true,
   "documentation": "https://github.com/idoiten/uponor-r167-ws",
   "issue_tracker": "https://github.com/idoiten/uponor-r167-ws/issues",

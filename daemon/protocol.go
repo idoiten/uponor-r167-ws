@@ -77,10 +77,15 @@ type Room struct {
 	Bitmask     string   `json:"bitmask"`
 	Heating     *bool    `json:"heating"`
 	Bypass      *bool    `json:"bypass"`
+	// RadioAlarm is set when the controller has lost contact with the
+	// room's thermostat (I-167: "Term. saknas"), about an hour after the
+	// thermostat went silent. Register 3E bit 0x0020.
+	RadioAlarm *bool `json:"radio_alarm"`
 	// Raw controller registers, hex: 3D status (heating demand, limits,
 	// ECO), 3E alarms (technical, tamper, RF, battery, RH sensor),
-	// 3F thermostat type / regulation mode. Bit meanings beyond the
-	// heating demand (3D 0x0040) are not mapped yet.
+	// 3F thermostat type / regulation mode. Mapped so far: 3D 0x0040
+	// heating demand, 3D 0x0200 room has an active alarm, 3E 0x0020
+	// radio alarm, 3F 0x0800 thermostat just started.
 	Registers  map[string]string `json:"registers"`
 	LastUpdate string            `json:"last_update"`
 
@@ -145,6 +150,9 @@ type Controller struct {
 
 	// setpoint writes waiting to be sent or confirmed, by room address
 	writes map[byte]*pendingWrite
+	// writes that timed out recently, so a late confirmation is still
+	// recognised as ours
+	lateWrites map[byte]lateWrite
 }
 
 func NewController(radio Transport, logf func(string, ...any), pub func(string, any), reqInterval time.Duration) *Controller {
@@ -157,6 +165,7 @@ func NewController(radio Transport, logf func(string, ...any), pub func(string, 
 		chanAddr:        map[byte]byte{},
 		rooms:           map[byte]*Room{},
 		writes:          map[byte]*pendingWrite{},
+		lateWrites:      map[byte]lateWrite{},
 	}
 }
 
@@ -396,9 +405,15 @@ func (c *Controller) applyValues(r *Room, temp, sp, min, max *float64, now time.
 		}
 	}
 	set(&r.Temperature, temp, 0, 50)
+	if sp != nil && outsideLimits(r, *sp, min, max) {
+		c.log("ignored setpoint %.1f for %s: outside the room's limits", *sp, r.Name)
+		sp = nil
+	}
 	if sp != nil && r.Setpoint != nil && *sp != *r.Setpoint && *sp >= 5 && *sp <= 40 {
 		if r.ownSetpoint != nil && *r.ownSetpoint == *sp {
 			r.ownSetpoint = nil // our own write, already logged as confirmed
+		} else if c.lateConfirm(r.addr, *sp, now) {
+			// our write, confirmed after we had given up on it
 		} else {
 			c.log("setpoint for %s changed from %.1f to %.1f (changed on the system, e.g. I-167 or thermostat)", r.Name, *r.Setpoint, *sp)
 		}
@@ -408,6 +423,22 @@ func (c *Controller) applyValues(r *Room, temp, sp, min, max *float64, now time.
 	set(&r.Max, max, 5, 40)
 	r.LastUpdate = now.UTC().Format(time.RFC3339)
 	return changed
+}
+
+// outsideLimits reports a setpoint outside the room's min/max. The limits
+// already known for the room are used first, so a frame carrying bogus
+// values (seen while the I-167 restarts: 30 °C with a 25 °C maximum)
+// cannot vouch for itself; a raised maximum is stored from this frame and
+// accepted from the next one.
+func outsideLimits(r *Room, sp float64, min, max *float64) bool {
+	lo, hi := r.Min, r.Max
+	if lo == nil {
+		lo = min
+	}
+	if hi == nil {
+		hi = max
+	}
+	return lo != nil && sp < *lo || hi != nil && sp > *hi
 }
 
 func (c *Controller) updateSystem(avg, outdoor *float64) {
@@ -502,6 +533,10 @@ func (c *Controller) publishRoom(r *Room, changed bool, now time.Time) {
 }
 
 var registerNames = []string{"3d", "3e", "3f"}
+
+// radioAlarmBit in register 3E: the controller has lost the thermostat.
+const radioAlarmBit = 0x0020
+
 var registerLabels = map[string]string{"3d": "status", "3e": "alarm", "3f": "type"}
 
 // setRegisters stores the raw 3D/3E/3F registers and logs every change,
@@ -528,6 +563,17 @@ func (c *Controller) setRegisters(r *Room, vals ...uint16) bool {
 		} else if name == "3e" && vals[i] != 0 {
 			c.log("alarm register (3e) for %s is %s at start", room, v)
 		}
+	}
+	alarm := vals[1]&radioAlarmBit != 0
+	if (r.RadioAlarm == nil && alarm) || (r.RadioAlarm != nil && *r.RadioAlarm != alarm) {
+		if alarm {
+			c.log("radio alarm for %s: the controller has lost contact with the thermostat", room)
+		} else if r.RadioAlarm != nil {
+			c.log("radio alarm for %s cleared", room)
+		}
+	}
+	if setFlag(&r.RadioAlarm, alarm) {
+		changed = true
 	}
 	return changed
 }
