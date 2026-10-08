@@ -678,3 +678,34 @@ func TestEcoModeWriteTimesOut(t *testing.T) {
 		t.Fatalf("flag %X, err %v", f, got)
 	}
 }
+
+func TestEcoModeRequeueKeepsTimeout(t *testing.T) {
+	fr := &fakeRadio{}
+	var logs []string
+	logf := func(f string, a ...any) { logs = append(logs, fmt.Sprintf(f, a...)) }
+	c := NewController(fr, logf, func(string, any) {}, time.Hour)
+	c.Handle(mustHex("14 ff 3c 1a ff 17 00 00 00 00 00 00 00 0e 1c 88 00 00 00 31 21 02 72 00 01 00 00 00 00 00 00 0d 53 43 aa 00 2d 00 00 00 24 00 24"))
+	var errs []error
+	done := func(err error) { errs = append(errs, err) }
+	c.SetEcoMode(false, done)
+	created := time.Now().Add(-90 * time.Second)
+	c.ecoWrite.created = created
+	c.SetEcoMode(false, done)
+	if len(errs) != 0 || !c.ecoWrite.created.Equal(created) || len(c.ecoWrite.dones) != 2 {
+		t.Fatalf("re-queue: errs %v, created changed %v", errs, !c.ecoWrite.created.Equal(created))
+	}
+	// Progress is logged from the periodic tick, with the name frames seen.
+	c.nextSystem = time.Now().Add(time.Hour)
+	c.Handle(mustHex("14 FF 3C 1A 1F 80 1D 00 00 00 00 11 00 00 00 00 4B 6C E4 64 76 E5 72 64 00 03 14 03 02 00 00 41 28 12 CE 00"))
+	c.ecoWrite.reported = time.Now().Add(-20 * time.Second)
+	c.ecoTick(time.Now())
+	if !strings.Contains(strings.Join(logs, "\n"), "1 name frames, 1 flagged; sent 0 times") {
+		t.Fatalf("no progress line: %v", logs)
+	}
+	// The timeout is enforced by the tick even without acknowledgements,
+	// and every caller gets the error.
+	c.ecoTick(time.Now().Add(time.Minute))
+	if len(errs) != 2 || errs[0] == nil || c.ecoWrite != nil {
+		t.Fatalf("timeout: %v", errs)
+	}
+}

@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.11.2] - 2026-10-08
+
+### Fixed
+- Switching ECO mode again while the same change was still waiting for the
+  I-167 replaced it and restarted the 2-minute timeout, so a slow change
+  never produced an error. The waiting change is now kept and its timeout
+  counts from the first request; every request gets the same result. The
+  timeout also applies when no acknowledgements are being sent.
+
+### Added
+- While an ECO mode change waits for the I-167, uhomed logs every 20 s how
+  many name frames arrived and how many acknowledgements carried the flag,
+  to find out why the I-167 sometimes takes minutes to pick a change up.
+  The confirmation line now says how long it took.
+
 ## [0.11.1] - 2026-10-08
 
 ### Fixed

@@ -23,7 +23,19 @@ type pendingEco struct {
 	created  time.Time
 	sentAt   time.Time
 	attempts int
-	done     func(error)
+	dones    []func(error)
+	// diagnostics while waiting for the I-167 to ask for the change
+	names, flagged int
+	reported       time.Time
+}
+
+// ecoReportEvery: how often a waiting ECO mode change is logged.
+const ecoReportEvery = 15 * time.Second
+
+func (e *pendingEco) finish(err error) {
+	for _, d := range e.dones {
+		d(err)
+	}
 }
 
 // SetEcoMode queues an ECO mode change. done is called exactly once, with
@@ -36,35 +48,67 @@ func (c *Controller) SetEcoMode(on bool, done func(error)) {
 		done(errors.New("the I-167 has not been heard yet, try again shortly"))
 		return
 	}
-	if c.ecoWrite != nil {
-		c.ecoWrite.done(errors.New("superseded by a newer ECO mode change"))
+	if e := c.ecoWrite; e != nil {
+		if e.want == on {
+			// the same change again: wait for the one already queued,
+			// keeping its timeout
+			e.dones = append(e.dones, done)
+			c.log("ECO mode %v already queued (%.0f s ago)", on, time.Since(e.created).Seconds())
+			return
+		}
 		c.ecoWrite = nil
+		e.finish(errors.New("superseded by a newer ECO mode change"))
 	}
 	if c.system.EcoMode != nil && *c.system.EcoMode == on {
 		done(nil)
 		return
 	}
-	c.ecoWrite = &pendingEco{want: on, created: time.Now(), done: done}
+	now := time.Now()
+	c.ecoWrite = &pendingEco{want: on, created: now, reported: now, dones: []func(error){done}}
 	c.log("ECO mode %v queued", on)
 }
 
 // ecoFlag returns 0x80 when an ECO mode change should be flagged in the
 // next acknowledgement. Room setpoints go first.
 func (c *Controller) ecoFlag(now time.Time) byte {
+	if c.ecoTimedOut(now) {
+		return 0
+	}
 	e := c.ecoWrite
-	if e == nil {
+	if e == nil || !e.sentAt.IsZero() && now.Sub(e.sentAt) < writeResendAfter {
 		return 0
 	}
-	if now.Sub(e.created) > writeTimeout {
-		c.log("ECO mode change timed out")
-		c.ecoWrite = nil
-		e.done(errors.New("the heating system did not confirm the ECO mode change"))
-		return 0
-	}
-	if !e.sentAt.IsZero() && now.Sub(e.sentAt) < writeResendAfter {
-		return 0
-	}
+	e.flagged++
 	return 0x80
+}
+
+// ecoTimedOut fails a pending ECO mode change that has waited too long.
+func (c *Controller) ecoTimedOut(now time.Time) bool {
+	e := c.ecoWrite
+	if e == nil || now.Sub(e.created) <= writeTimeout {
+		return false
+	}
+	c.log("ECO mode change timed out after %.0f s (%d attempts)", now.Sub(e.created).Seconds(), e.attempts)
+	c.ecoWrite = nil
+	e.finish(errors.New("the heating system did not confirm the ECO mode change"))
+	return true
+}
+
+// ecoTick runs periodically: times out a pending change even when no
+// acknowledgements are sent, and logs how it is getting on, so a slow
+// change shows whether the I-167 kept polling the R-167 (name frames)
+// and how many acknowledgements carried the flag.
+func (c *Controller) ecoTick(now time.Time) {
+	if c.ecoTimedOut(now) {
+		return
+	}
+	e := c.ecoWrite
+	if e == nil || now.Sub(e.reported) < ecoReportEvery {
+		return
+	}
+	c.log("ECO mode %v still waiting after %.0f s: last %.0f s %d name frames, %d flagged; sent %d times",
+		e.want, now.Sub(e.created).Seconds(), now.Sub(e.reported).Seconds(), e.names, e.flagged, e.attempts)
+	e.names, e.flagged, e.reported = 0, 0, now
 }
 
 // onSystemWriteQuery answers the I-167's request for a system change.
@@ -98,6 +142,6 @@ func (c *Controller) confirmEco(on bool) {
 		return
 	}
 	c.ecoWrite = nil
-	c.log("ECO mode %v confirmed", on)
-	e.done(nil)
+	c.log("ECO mode %v confirmed after %.0f s", on, time.Since(e.created).Seconds())
+	e.finish(nil)
 }

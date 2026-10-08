@@ -311,6 +311,9 @@ func (c *Controller) onNameFrame(p []byte, now time.Time) {
 			}
 		}
 	}
+	if c.ecoWrite != nil {
+		c.ecoWrite.names++
+	}
 	// A pending setpoint change takes priority; never combine it with a
 	// record request in the same acknowledgement.
 	wf := c.writeFlag(now)
@@ -592,6 +595,7 @@ func (c *Controller) Watch() {
 			c.pub("status", c.statusLocked(now))
 		}
 		last = ok
+		c.ecoTick(now)
 		if c.frames != lastFrames {
 			c.pub("stats", c.statusLocked(now))
 			lastFrames = c.frames
