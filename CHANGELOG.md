@@ -6,8 +6,9 @@
 - While a room runs ECO, Home Assistant and the web page showed the comfort
   setpoint (e.g. 25 °C) instead of the lowered one the I-167 shows and the
   room uses (25 − ECO offset 2 = 23 °C). The thermostat card now shows
-  setpoint − ECO offset in ECO, with the limits shifted the same way;
-  changing it there writes the matching comfort setpoint (23 → 24 writes 25).
+  setpoint − ECO offset in ECO; changing it there writes the matching
+  comfort setpoint (23 → 24 writes 25). Min and max stay as set on the
+  I-167, so in ECO the setpoint can be raised to at most max − ECO offset.
   The web page marks it "Setpoint (ECO)".
 
 ### Added

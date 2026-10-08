@@ -68,11 +68,11 @@ class UponorWsClimate(UponorWsRoomEntity, ClimateEntity):
 
     @property
     def min_temp(self) -> float:
-        return ((self.room or {}).get("min") or 5.0) - self._eco_offset()
+        return (self.room or {}).get("min") or 5.0
 
     @property
     def max_temp(self) -> float:
-        return ((self.room or {}).get("max") or 35.0) - self._eco_offset()
+        return (self.room or {}).get("max") or 35.0
 
     @property
     def preset_mode(self) -> str | None:
@@ -121,9 +121,16 @@ class UponorWsClimate(UponorWsRoomEntity, ClimateEntity):
         value = kwargs.get(ATTR_TEMPERATURE)
         if value is None:
             return
+        # in ECO the shown value is comfort − offset; write the comfort setpoint
+        offset = self._eco_offset()
+        comfort = round(float(value) + offset, 1)
+        if offset and comfort > self.max_temp:
+            raise HomeAssistantError(
+                f"In ECO the setpoint can be at most {self.max_temp - offset:.1f} °C "
+                f"(max {self.max_temp:.1f} °C minus ECO offset {offset:.1f} °C)"
+            )
         try:
-            # in ECO the shown value is comfort − offset; write the comfort setpoint
-            await self._client.set_setpoint(self._room_id, round(float(value) + self._eco_offset(), 1))
+            await self._client.set_setpoint(self._room_id, comfort)
         except UponorWsError as err:
             raise HomeAssistantError(f"Could not change the setpoint: {err}") from err
 

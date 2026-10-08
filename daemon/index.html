@@ -121,8 +121,8 @@ function step(id, delta) {
   const d = drafts.get(id) || { value: r.setpoint - off };
   if (d.sending) return;
   let v = Math.round((d.value + delta) * 2) / 2;
-  if (r.min != null) v = Math.max(r.min - off, v);
-  if (r.max != null) v = Math.min(r.max - off, v);
+  if (r.min != null) v = Math.max(r.min, v);
+  if (r.max != null) v = Math.min(r.max - off, v); // the comfort setpoint (shown + offset) stays within max
   d.value = v;
   d.offset = off;
   clearTimeout(d.timer);
@@ -203,7 +203,7 @@ function renderRoom(r, flash) {
   spv.textContent = fmt(shown);
   spv.className = "spv" + (d ? " draft" : "");
   const busy = !!(d && d.sending) || r.setpoint == null;
-  el.querySelector(".dec").disabled = busy || (r.min != null && shown <= r.min - off);
+  el.querySelector(".dec").disabled = busy || (r.min != null && shown <= r.min);
   el.querySelector(".inc").disabled = busy || (r.max != null && shown >= r.max - off);
   const lbl = el.querySelector(".sp .label");
   lbl.textContent = off ? "Setpoint (ECO)" : "Setpoint";
