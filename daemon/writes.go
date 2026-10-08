@@ -109,7 +109,7 @@ func (c *Controller) writeFlag(now time.Time) byte {
 		}
 	}
 	if next == nil {
-		return 0
+		return c.ecoFlag(now)
 	}
 	next.flaggedAt = now
 	return 0x80 | next.ch
@@ -122,9 +122,6 @@ func (c *Controller) onWriteQuery(p []byte, now time.Time) {
 	r := c.rooms[addr]
 	if w == nil || r == nil || len(r.block) != 12 || r.ecoOffset == nil {
 		c.log("write query for 0x%02X without a pending change, ignored: % X", addr, p)
-		if now.Before(c.probeUntil) {
-			c.probeUntil = time.Time{} // got what the probe was for
-		}
 		return
 	}
 	frame := []byte{0x14, 0xFF, 0x3C, 0x1A, 0x1F, 0x85, 0x01, 0x00, addr, 0x00, 0x08}

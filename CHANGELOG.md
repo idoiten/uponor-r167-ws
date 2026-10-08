@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.11.0] - 2026-10-08
+
+### Added
+- **ECO mode can be switched from Home Assistant.** The *ECO-läge* switch
+  on the Uponor R-167 device now sets Away (on) or Home (off) on the I-167,
+  using the same exchange as Uponor's original software (captured on a
+  live system): uhomed flags a system change, the I-167 asks for it, and
+  uhomed answers with the I-167's own system registers with the ECO bit
+  changed. The switch waits until the I-167 reports the new state (usually
+  within about 15 s); otherwise HA shows an error after 2 minutes.
+- WebSocket command `{"type": "set_eco_mode", "id": 1, "value": true}`.
+
+### Removed
+- The experimental `POST /debug/probe-system` from 0.10.0, no longer needed.
+
 ## [0.10.0] - 2026-10-08
 
 ### Added

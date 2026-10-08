@@ -13,8 +13,9 @@ Changes are pushed to Home Assistant over a WebSocket – no polling.
 X-165 ⇄ I-167 ⇄ (868 MHz) ⇄ R-167 running uhomed ── WebSocket :8765 ── Home Assistant
 ```
 
-> **Status: 0.3.0.** Temperatures, setpoints, limits, heating demand and
-> bypass are read, and setpoints can be changed. Alarms are not supported yet. While uhomed runs, the
+> **Status: 0.11.0.** Temperatures, setpoints, limits, heating demand,
+> bypass, alarms and ECO mode are read; setpoints and ECO mode (Home/Away)
+> can be changed. While uhomed runs, the
 > original Uponor web UI and app are not available – switch back to the
 > original mode at any time.
 
@@ -134,9 +135,11 @@ frames, the system frame and record) whenever their content changes, as
 `watch ...` lines in `/tmp/uhomed.log` (at most 30 per minute). This is how
 new commands are found: toggle something on the I-167 and look at the log.
 
-Experimental, read only: `POST /debug/probe-system` flags a pending system
-change in the acknowledgements for 60 s and logs what the I-167 asks for,
-without answering. A step towards switching ECO mode from HA.
+ECO mode is switched the way Uponor's software does it: the R-167 flags a
+change for channel 0 (`80` in byte 11 of its acknowledgement), the I-167
+asks with `1F 85 00 00 00 00 0E`, and the R-167 answers with those eleven
+bytes, the I-167's last FF 17 bytes 15-42 with bit `0800` set or cleared,
+and four zero bytes. The next FF 17 frame confirms the change.
 
 Client commands:
 
@@ -144,6 +147,8 @@ Client commands:
 - `{"type": "set_setpoint", "id": 1, "room": "4a", "value": 24.5}` – answered
   with `{"type": "result", "data": {"id": 1, "success": true}}` when the
   controller confirms the new value, or `success: false` and an `error`.
+- `{"type": "set_eco_mode", "id": 2, "value": true}` – ECO mode on (Away)
+  or off (Home); answered the same way when the I-167 reports the change.
 
 ## Building uhomed
 

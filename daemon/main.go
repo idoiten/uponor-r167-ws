@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-const version = "0.10.0"
+const version = "0.11.0"
 
 //go:embed index.html
 var webFiles embed.FS
@@ -159,10 +159,10 @@ func main() {
 		}
 		hub.Serve(c, encode("snapshot", ctrl.Snapshot()), func(c *wsConn, b []byte) {
 			var cmd struct {
-				Type  string   `json:"type"`
-				ID    any      `json:"id"`
-				Room  string   `json:"room"`
-				Value *float64 `json:"value"`
+				Type  string          `json:"type"`
+				ID    any             `json:"id"`
+				Room  string          `json:"room"`
+				Value json.RawMessage `json:"value"`
 			}
 			if json.Unmarshal(b, &cmd) != nil {
 				return
@@ -181,26 +181,23 @@ func main() {
 			case "get_snapshot":
 				c.out <- encode("snapshot", ctrl.Snapshot())
 			case "set_setpoint":
-				if cmd.Value == nil || cmd.Room == "" {
-					reply(fmt.Errorf("set_setpoint needs room and value"))
+				var v float64
+				if cmd.Room == "" || json.Unmarshal(cmd.Value, &v) != nil {
+					reply(fmt.Errorf("set_setpoint needs room and a numeric value"))
 					return
 				}
-				ctrl.SetSetpoint(cmd.Room, *cmd.Value, reply)
+				ctrl.SetSetpoint(cmd.Room, v, reply)
+			case "set_eco_mode":
+				var on bool
+				if json.Unmarshal(cmd.Value, &on) != nil {
+					reply(fmt.Errorf("set_eco_mode needs a boolean value"))
+					return
+				}
+				ctrl.SetEcoMode(on, reply)
 			default:
 				c.out <- encode("error", map[string]any{"id": cmd.ID, "message": "unsupported command: " + cmd.Type})
 			}
 		})
-	})
-	// Experimental, read only: flag a pending system change for 60 s and log
-	// what the I-167 asks for (nothing is answered).
-	//   curl -X POST http://<r167>:8765/debug/probe-system
-	mux.HandleFunc("/debug/probe-system", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "use POST", http.StatusMethodNotAllowed)
-			return
-		}
-		ctrl.ProbeSystemWrite(60 * time.Second)
-		fmt.Fprintln(w, "probing for 60 s; see /tmp/uhomed.log")
 	})
 	mux.HandleFunc("/state", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

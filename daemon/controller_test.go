@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -605,28 +606,72 @@ func TestEcoModeFromTouchScreen(t *testing.T) {
 	}
 }
 
-func TestProbeFlagsSystemChange(t *testing.T) {
+func TestEcoModeWrite(t *testing.T) {
 	fr := &fakeRadio{records: loadRecords(t)}
 	var logs []string
 	logf := func(f string, a ...any) { logs = append(logs, fmt.Sprintf(f, a...)) }
 	c := NewController(fr, logf, func(string, any) {}, time.Hour)
-	c.names[0x12] = "K-E-V"
-	c.Handle(fr.records[0x4A])
 	c.nextSystem = time.Now().Add(time.Hour)
-	c.ProbeSystemWrite(time.Minute)
-	c.Handle(mustHex("14 FF 3C 1A 1F 80 1D 00 00 00 00 11 00 00 00 00 4B 6C E4 64 76 E5 72 64 00 03 14 03 02 00 00 41 28 12 CE 00"))
-	if ack := fr.sent[len(fr.sent)-1]; ack[11] != 0x90 || ack[12] != 0 {
-		t.Fatalf("ack = % X, want 90 in [11] and no request", ack)
+	name := mustHex("14 FF 3C 1A 1F 80 1D 00 00 00 00 11 00 00 00 00 4B 6C E4 64 76 E5 72 64 00 03 14 03 02 00 00 41 28 12 CE 00")
+	query := mustHex("14 FF 3C 1A 1F 85 00 00 00 00 0E")
+
+	var res []error
+	done := func(err error) { res = append(res, err) }
+	c.SetEcoMode(true, done)
+	if len(res) != 1 || res[0] == nil {
+		t.Fatal("must refuse before the I-167 has been heard")
 	}
-	sent := len(fr.sent)
-	c.Handle(mustHex("14 FF 3C 1A 1F 85 01 00 22 00 08")) // hypothetical system query
-	if len(fr.sent) != sent {
-		t.Fatal("the probe must not answer")
+	res = nil
+
+	// Captured 2026-10-08 14:41:49, Home.
+	c.Handle(mustHex("14 ff 3c 1a ff 17 00 00 00 00 00 00 00 0e 1c 80 00 00 00 31 21 02 72 00 01 00 00 00 00 00 00 0d 53 43 aa 00 2d 00 00 00 24 00 24"))
+	c.SetEcoMode(false, done)
+	if len(res) != 1 || res[0] != nil {
+		t.Fatalf("already Home: %v", res)
 	}
-	if !c.probeUntil.IsZero() {
-		t.Fatal("probe should stop after the first query")
+	res = nil
+
+	c.SetEcoMode(true, done)
+	c.Handle(name)
+	if ack := fr.sent[len(fr.sent)-1]; ack[11] != 0x80 || ack[12] != 0 {
+		t.Fatalf("ack = % X, want 80 in [11]", ack)
 	}
-	if !hasLog(logs, "write query for 0x22 without a pending change, ignored: 14 FF 3C 1A 1F 85 01 00 22 00 08") {
-		t.Fatalf("query not logged: %v", logs)
+	c.Handle(query)
+	// What the original firmware sent for Away (its four trailing bytes
+	// were not always zero; zeros worked for Home).
+	want := mustHex("14 ff 3c 1a 1f 85 00 00 00 00 0e 88 00 00 00 31 21 02 72 00 01 00 00 00 00 00 00 0d 53 43 aa 00 2d 00 00 00 24 00 24 00 00 00 00")
+	if got := fr.sent[len(fr.sent)-1]; !bytes.Equal(got, want) {
+		t.Fatalf("reply\n got % x\nwant % x", got, want)
+	}
+	// Sent: not flagged again while waiting for the confirmation.
+	c.Handle(name)
+	if ack := fr.sent[len(fr.sent)-1]; ack[11] != 0 {
+		t.Fatalf("flagged again: % X", ack)
+	}
+	if len(res) != 0 {
+		t.Fatal("confirmed too early")
+	}
+	c.Handle(mustHex("14 ff 3c 1a ff 17 00 00 00 00 00 00 00 0e 1c 88 00 00 00 31 21 02 72 00 01 00 00 00 00 00 00 0d 53 43 ab 00 01 00 00 00 24 00 24"))
+	if len(res) != 1 || res[0] != nil || !*c.system.EcoMode || c.ecoWrite != nil {
+		t.Fatalf("not confirmed: %v %v", res, logs)
+	}
+
+	// A query with nothing pending is not answered.
+	n := len(fr.sent)
+	c.Handle(query)
+	if len(fr.sent) != n {
+		t.Fatal("answered without a pending change")
+	}
+}
+
+func TestEcoModeWriteTimesOut(t *testing.T) {
+	fr := &fakeRadio{}
+	c := NewController(fr, func(string, ...any) {}, func(string, any) {}, time.Hour)
+	c.Handle(mustHex("14 ff 3c 1a ff 17 00 00 00 00 00 00 00 0e 1c 80 00 00 00 31 21 02 72 00 01 00 00 00 00 00 00 0d 53 43 aa 00 2d 00 00 00 24 00 24"))
+	var got error
+	c.SetEcoMode(true, func(err error) { got = err })
+	c.ecoWrite.created = time.Now().Add(-3 * time.Minute)
+	if f := c.ecoFlag(time.Now()); f != 0 || got == nil || c.ecoWrite != nil {
+		t.Fatalf("flag %X, err %v", f, got)
 	}
 }

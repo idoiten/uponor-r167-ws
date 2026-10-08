@@ -151,6 +151,10 @@ class UponorWsClient:
         """Change a room's setpoint and wait until the controller confirms it."""
         await self._command({"type": "set_setpoint", "room": room_id, "value": value}, timeout)
 
+    async def set_eco_mode(self, on: bool, timeout: float = 150) -> None:
+        """Switch ECO mode (Away on the I-167) and wait until it is confirmed."""
+        await self._command({"type": "set_eco_mode", "value": on}, timeout)
+
     async def _command(self, payload: dict[str, Any], timeout: float) -> None:
         if self._ws is None or self._ws.closed:
             raise UponorWsError("not connected to uhomed")

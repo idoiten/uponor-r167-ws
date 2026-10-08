@@ -8,6 +8,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
 
+from .client import UponorWsError
 from .const import DOMAIN
 from .entity import UponorWsEntity
 
@@ -21,8 +22,8 @@ class UponorWsEcoModeSwitch(UponorWsEntity, SwitchEntity):
     """On when the system is set to Away (ECO) on the I-167.
 
     Every room whose thermostat switch is on Comfort/ECO then lowers its
-    setpoint by its ECO offset. Shown live; switching it from Home
-    Assistant is not supported yet.
+    setpoint by its ECO offset. Switching waits until the I-167 reports
+    the new state.
     """
 
     _attr_translation_key = "eco_mode"
@@ -43,13 +44,13 @@ class UponorWsEcoModeSwitch(UponorWsEntity, SwitchEntity):
         return self._client.connected and self.is_on is not None
 
     async def async_turn_on(self, **kwargs) -> None:
-        self._not_supported()
+        await self._set(True)
 
     async def async_turn_off(self, **kwargs) -> None:
-        self._not_supported()
+        await self._set(False)
 
-    @staticmethod
-    def _not_supported() -> None:
-        raise HomeAssistantError(
-            "Switching ECO mode from Home Assistant is not supported yet; use Home/Away on the I-167"
-        )
+    async def _set(self, on: bool) -> None:
+        try:
+            await self._client.set_eco_mode(on)
+        except UponorWsError as err:
+            raise HomeAssistantError(f"Could not change ECO mode: {err}") from err

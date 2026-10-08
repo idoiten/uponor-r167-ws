@@ -172,10 +172,10 @@ type Controller struct {
 	writes map[byte]*pendingWrite
 	// last seen first system register of the I-167 (FF 17 frame)
 	tsReg0 *uint16
-	// probeUntil: while set and in the future, acknowledgements flag a
-	// pending system change (0x90) so the I-167's follow-up query can be
-	// logged. Nothing is answered.
-	probeUntil time.Time
+	// last FF 17 payload bytes [15:43], echoed back when ECO mode changes
+	tsRegs []byte
+	// pending ECO mode (Home/Away) change
+	ecoWrite *pendingEco
 	// watch logging of undecoded frames
 	watched     map[string]string
 	watchWindow time.Time
@@ -232,6 +232,8 @@ func (c *Controller) Handle(p []byte) {
 		c.onRecord(p, now)
 	case p[4] == 0x1F && p[5] == 0x85 && len(p) == 11 && p[6] == 0x01:
 		c.onWriteQuery(p, now)
+	case p[4] == 0x1F && p[5] == 0x85 && len(p) == 11 && p[6] == 0x00:
+		c.onSystemWriteQuery(p, now)
 	case p[4] == 0x01 && p[5] == 0x17 && len(p) == 31 && p[6] == 0x00:
 		c.hdrAddr, c.hdrAt = p[11], now
 		bypassChanged := false
@@ -306,10 +308,6 @@ func (c *Controller) onNameFrame(p []byte, now time.Time) {
 	// A pending setpoint change takes priority; never combine it with a
 	// record request in the same acknowledgement.
 	wf := c.writeFlag(now)
-	if wf == 0 && now.Before(c.probeUntil) {
-		wf = 0x90
-		c.log("probe: flagged a system change (0x90)")
-	}
 	rq := byte(0)
 	if wf == 0 {
 		rq = c.nextRequest(now)
@@ -533,6 +531,8 @@ const tsEcoModeBit = 0x0800
 func (c *Controller) onTouchScreen(p []byte) {
 	reg0 := u16(p, 15)
 	c.tsReg0 = &reg0
+	c.tsRegs = append(c.tsRegs[:0], p[15:43]...)
+	c.confirmEco(reg0&tsEcoModeBit != 0)
 	known := c.system.EcoMode != nil
 	if setFlag(&c.system.EcoMode, reg0&tsEcoModeBit != 0) {
 		if known {
@@ -754,14 +754,4 @@ func (c *Controller) setSettings(r *Room) bool {
 		c.log("settings register (35) for %s changed %s -> %s", room, old, v)
 	}
 	return true
-}
-
-// ProbeSystemWrite flags a pending system change in the next
-// acknowledgements for d, to see what the I-167 asks for. Its query is
-// logged by onWriteQuery and not answered, so nothing can change.
-func (c *Controller) ProbeSystemWrite(d time.Duration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.probeUntil = time.Now().Add(d)
-	c.log("probe: flagging a system change for %v", d)
 }
