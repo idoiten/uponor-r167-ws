@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.3] - 2026-10-09
+
+### Added
+- Uponor icon for the integration (`brand/icon.png`, `brand/icon@2x.png`),
+  shown in Home Assistant 2026.3 and newer.
+- The web page has the same icon in the browser tab (`/favicon.png`).
+
 ## [0.11.2] - 2026-10-08
 
 ### Fixed

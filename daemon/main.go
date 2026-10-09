@@ -21,9 +21,9 @@ import (
 	"time"
 )
 
-const version = "0.11.2"
+const version = "0.11.3"
 
-//go:embed index.html
+//go:embed index.html favicon.png
 var webFiles embed.FS
 
 var (
@@ -198,6 +198,12 @@ func main() {
 				c.out <- encode("error", map[string]any{"id": cmd.ID, "message": "unsupported command: " + cmd.Type})
 			}
 		})
+	})
+	mux.HandleFunc("/favicon.png", func(w http.ResponseWriter, r *http.Request) {
+		b, _ := webFiles.ReadFile("favicon.png")
+		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("Cache-Control", "max-age=86400")
+		w.Write(b)
 	})
 	mux.HandleFunc("/state", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
